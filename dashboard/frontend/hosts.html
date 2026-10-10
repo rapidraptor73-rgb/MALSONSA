@@ -3,20 +3,10 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>PSC SOC - Host Registry</title>
-<style>
-:root{--bg:#08111f;--panel:#111a2a;--line:#26334a;--text:#e8eef7;--muted:#92a1b8}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Arial,sans-serif}
-header{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;background:#0c1524}
-nav{display:flex;gap:8px}nav a{color:#d5ddeb;text-decoration:none;border:1px solid var(--line);padding:8px 11px;border-radius:7px}
-main{padding:20px;max-width:1400px;margin:auto}.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:16px}
-.title{padding:14px 16px;border-bottom:1px solid var(--line);font-weight:700}.form{display:grid;grid-template-columns:1.1fr 1fr 1fr 1.2fr 2fr auto;gap:10px;padding:16px}
-input,select,button{background:#0d1727;color:var(--text);border:1px solid #33435d;border-radius:7px;padding:10px}button{cursor:pointer}.primary{background:#087eb5}.danger{background:#8d2727}
-table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px solid #202d42;text-align:left;font-size:13px}th{background:#0d1727;color:#9dacbf}
-.help{padding:0 16px 16px;color:var(--muted);font-size:13px}.on{color:#6ee7ad}.off{color:#ff9d9d}
-</style>
+<link rel="stylesheet" href="/theme.css?v=20261010-white">
 </head>
 <body>
-<header><b>Monitoring Host Registry</b><nav><a href="/">메인</a><a href="/rsyslog.html">Rsyslog Correlation</a></nav></header>
+<header><div><h1>관제 호스트 관리</h1><p>로그를 전송하는 호스트와 수집 현황을 관리합니다.</p></div><nav><a href="/">메인</a><a href="/rsyslog.html">Rsyslog Correlation</a></nav></header>
 <main>
 <section class="panel"><div class="title">신규 관제 대상 등록</div>
 <div class="form">
