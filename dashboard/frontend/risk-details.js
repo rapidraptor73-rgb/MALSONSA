@@ -47,6 +47,11 @@
     const point=item=>item.points===null?'점수 미제공':`${item.points>=0?'+':''}${item.points}점`;
     return `<span class="reason-preview">${items.slice(0,2).map(item=>escape(item.label)+' '+point(item)).join(' · ')}${items.length>2?' 외 '+(items.length-2)+'개':''}</span><details class="reason-details"><summary>근거 ${items.length}개${known?' · 합계 '+total+'점':''} 자세히</summary><ol class="reason-list">${items.map(item=>`<li><div class="reason-heading"><span>${escape(item.label)}</span><span class="reason-points">${point(item)}</span></div><p>${escape(item.description)}</p></li>`).join('')}</ol></details>`;
   }
-  const api={priority,scoreBadge,reasons,reasonHtml};
+  function detectionHtml(event={}){
+    const detections=event.detections||[];
+    if(!detections.length) return '<span class="muted">일치 룰 없음 · 공격 안전 여부를 뜻하지 않습니다.</span>';
+    return `<div class="detection-result">${scoreBadge(event.detection_score)}<span class="subtext">현재 룰 기준 · 추정 공격</span><details class="reason-details"><summary>${detections.map(item=>escape(item.attack)).join(' · ')} · 근거 ${detections.length}개</summary><ol class="reason-list">${detections.map(item=>`<li><div class="reason-heading"><span>${escape(item.name)} · ${escape(item.attack)} 의심</span><span class="reason-points">+${escape(item.points)}점</span></div><p>${escape(item.reason)}</p>${item.evidence.map(e=>`<p>${escape(e.field)} ${e.operator==='contains'?'포함':'일치'}: <code>${escape(e.expected)}</code><br>관찰값: ${escape(e.actual)}</p>`).join('')}${item.min_hits>1?`<p>${escape(item.window_seconds)}초 내 ${escape(item.hits)}회 관찰 / 기준 ${escape(item.min_hits)}회 · ${escape(item.group_by)}</p>`:''}</li>`).join('')}</ol></details></div>`;
+  }
+  const api={priority,scoreBadge,reasons,reasonHtml,detectionHtml};
   if(typeof module==='object' && module.exports) module.exports=api; else root.SiemRisk=api;
 })(typeof window!=='undefined'?window:globalThis);

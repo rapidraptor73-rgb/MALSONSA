@@ -22,3 +22,6 @@ assert.ok(risk.scoreBadge(135).includes('CRITICAL'));
 console.log('Priority boundaries, additive explanations and escaping checks passed');
 const html=fs.readFileSync(path.join(__dirname,'../dashboard/frontend/rsyslog.html'),'utf8');
 for(const key of ['all','critical','high','medium','low']) assert.ok(html.includes(`<option value="${key}">`),`Missing priority option: ${key}`);
+const detection=risk.detectionHtml({detection_score:120,detections:[{name:'test',attack:'<script>bad</script>',points:120,reason:'same source repeated failures',evidence:[{field:'message',operator:'contains',expected:'failed',actual:'<img src=x>'}],hits:5,min_hits:5,window_seconds:300,group_by:'src_ip'}]});
+assert.ok(detection.includes('CRITICAL'));assert.ok(detection.includes('5회 관찰'));assert.ok(!detection.includes('<script>'));assert.ok(!detection.includes('<img'));assert.ok(detection.includes('&lt;script&gt;'));
+assert.ok(risk.detectionHtml({}).includes('일치 룰 없음'));

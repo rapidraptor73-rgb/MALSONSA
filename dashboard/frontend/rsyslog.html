@@ -10,7 +10,7 @@
 <body>
 <header>
   <div><h1>Rsyslog Correlation</h1><p>수집 로그를 앵커로 고정하고, 연관된 활동의 검토 우선순위를 확인합니다.</p></div>
-  <nav><a href="/">메인</a><a href="/hosts.html">호스트 등록</a></nav>
+  <nav><a href="/">메인</a><a href="/hosts.html">호스트 등록</a><a href="/rules.html">관제 룰셋</a></nav>
 </header>
 
 <main>
@@ -41,6 +41,7 @@
 
     <input id="q" aria-label="로그 검색" placeholder="IP, 사용자 또는 메시지 검색" oninput="renderEvents()">
     <label><input id="autoRefresh" type="checkbox" checked> 자동 새로고침(3초)</label>
+    <select id="detectionFilter" aria-label="관제 룰 탐지 필터" onchange="renderEvents()"><option value="all">전체 로그</option><option value="matched">룰 탐지 로그만</option><option value="critical">탐지 Critical ≥120</option><option value="high">탐지 High 90–119</option><option value="medium">탐지 Medium 60–89</option><option value="low">탐지 Low 1–59</option></select>
     <span style="margin-left:auto" id="currentView">현재 보기: 전체 관제 대상</span>
   </div>
 
@@ -57,7 +58,7 @@
       <table>
         <thead><tr>
           <th>앵커</th><th>발생 시각</th><th>관제 호스트</th><th>이벤트 / 분류</th>
-          <th>출발지 SRC</th><th>목적지 DST</th><th>메시지</th>
+          <th>출발지 SRC</th><th>목적지 DST</th><th>추정 공격 / 탐지 점수</th><th>메시지</th>
         </tr></thead>
         <tbody id="eventsBody"></tbody>
       </table>
@@ -98,7 +99,7 @@
   </section>
 </main>
 
-<script src="/risk-details.js?v=20261010-white"></script>
+<script src="/risk-details.js?v=agent-rules"></script>
 <script>
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 
@@ -215,9 +216,24 @@ function sortNewest(a,b){
 }
 
 function filteredEvents(){
+  const detectionFilter=document.getElementById('detectionFilter').value;
   return allEvents
     .filter(e=>hostMatches(e) && timeMatches(e) && searchMatches(e))
+    .filter(e=>detectionFilter==='all'||(Number(e.detection_score)>0&&(detectionFilter==='matched'||SiemRisk.priority(e.detection_score).key===detectionFilter)))
     .sort(sortNewest);
+}
+
+function openDetails(container){
+  const opened=new Set();
+  container.querySelectorAll('tr[data-event-id]').forEach(row=>row.querySelectorAll('details').forEach((detail,index)=>{
+    if(detail.open) opened.add(row.dataset.eventId+':'+index);
+  }));
+  return opened;
+}
+function restoreDetails(container,opened){
+  container.querySelectorAll('tr[data-event-id]').forEach(row=>row.querySelectorAll('details').forEach((detail,index)=>{
+    detail.open=opened.has(row.dataset.eventId+':'+index);
+  }));
 }
 
 function renderTabs(){
@@ -248,6 +264,7 @@ function selectHost(v){
 }
 
 function renderEvents(){
+  const opened=openDetails(eventsBody);
   const rows=filteredEvents();
   eventCount.textContent=rows.length;
   apiLoaded.textContent=allEvents.length;
@@ -262,17 +279,19 @@ function renderEvents(){
   eventsBody.innerHTML=rows.map(e=>{
     const isNew=previousNewestId!==null && Number(e.id)>previousNewestId;
     const badTime=!parseTime(eventTime(e));
-    return `<tr class="${isNew?'newrow':''}">
+    return `<tr data-event-id="${Number(e.id)}" class="${isNew?'newrow':''}">
       <td>${e.held?'<span class="hold">● HOLD</span><br>':''}<button onclick="viewEvent(${Number(e.id)})">상세 보기</button></td>
       <td class="${badTime?'bad':''}"><span class="mono" title="${esc(eventTime(e))}">${esc(displayTime(e))}</span><span class="subtext">${esc(ageText(eventTime(e)))}</span></td>
       <td class="mono">${esc(e.host_ip||'-')}</td>
       <td><b>${esc(e.event||e.event_type||'-')}</b><span class="subtext">${esc(e.program||'-')} · ${esc(e.user||'-')}</span>${e.mitre?`<span class="tag">${esc(e.mitre)}</span>`:''}</td>
       <td class="mono">${esc(e.src_ip||'-')}</td>
       <td class="mono">${esc(e.dst_ip||'-')}</td>
+      <td class="reason-cell">${SiemRisk.detectionHtml(e)}</td>
       <td class="msg">${esc(e.message||e.raw_message||'')}</td>
     </tr>`;
   }).join('');
-  if(!rows.length) eventsBody.innerHTML='<tr><td colspan="7" class="empty-state">현재 조회 조건에 맞는 로그가 없습니다. 조회 기간이나 검색어를 조정하세요.</td></tr>';
+  restoreDetails(eventsBody,opened);
+  if(!rows.length) eventsBody.innerHTML='<tr><td colspan="8" class="empty-state">현재 조회 조건에 맞는 로그가 없습니다. 조회 기간이나 검색어를 조정하세요.</td></tr>';
 
   if(allEvents.length){
     previousNewestId=Math.max(...allEvents.map(x=>Number(x.id)||0));
@@ -292,7 +311,7 @@ async function loadEvents(){
     const requestStarted=Date.now();
     const r=await fetch('/api/events?limit=1000&_='+Date.now(),{cache:'no-store'});
     if(!r.ok){
-      eventsBody.innerHTML=`<tr><td colspan="7" class="bad">/api/events 오류: HTTP ${r.status}</td></tr>`;
+      eventsBody.innerHTML=`<tr><td colspan="8" class="bad">/api/events 오류: HTTP ${r.status}</td></tr>`;
       return;
     }
     const j=await r.json();
@@ -301,7 +320,7 @@ async function loadEvents(){
     renderTabs();
     renderEvents();
   }catch(e){
-    eventsBody.innerHTML=`<tr><td colspan="7" class="bad">API 요청 실패: ${esc(e.message)}</td></tr>`;
+    eventsBody.innerHTML=`<tr><td colspan="8" class="bad">API 요청 실패: ${esc(e.message)}</td></tr>`;
   }
 }
 
@@ -326,6 +345,7 @@ async function viewEvent(id){
     <div class="kv"><small>USER</small><b>${esc(e.user||'-')}</b></div>
     <div class="kv"><small>PROGRAM</small><b>${esc(e.program||'-')}</b></div>
     <div class="kv"><small>MITRE</small><b>${esc(e.mitre||'-')}</b></div>
+    <div class="reason-cell"><small>추정 공격 · 탐지 점수</small>${SiemRisk.detectionHtml(e)}</div>
     <div><button onclick="${e.held?'unhold':'hold'}(${Number(e.id)})">${e.held?'HOLD 해제':'HOLD'}</button></div>`;
   await loadSimilar();
 }
@@ -373,6 +393,7 @@ function selectPriority(key){
 }
 
 function renderSimilarRows(){
+  const opened=openDetails(similarBody);
   const selected=document.getElementById('priorityFilter').value;
   for(const key of ['critical','high','medium','low']){
     document.getElementById(key+'Count').textContent=anchorId?similarEvents.filter(e=>SiemRisk.priority(e.similar_score).key===key).length:'—';
@@ -381,14 +402,15 @@ function renderSimilarRows(){
   const rows=similarEvents.filter(e=>selected==='all'||SiemRisk.priority(e.similar_score).key===selected)
     .sort((a,b)=>Number(b.similar_score)-Number(a.similar_score)||sortNewest(a,b));
   similarCount.textContent=rows.length;
-  similarBody.innerHTML=rows.map(e=>`<tr class="${SiemRisk.priority(e.similar_score).key}-row">
+  similarBody.innerHTML=rows.map(e=>`<tr data-event-id="${Number(e.id)}" class="${SiemRisk.priority(e.similar_score).key}-row">
     <td>${SiemRisk.scoreBadge(e.similar_score)}</td>
     <td><span class="mono" title="${esc(eventTime(e))}">${esc(displayTime(e))}</span><span class="subtext">${esc(ageText(eventTime(e)))}</span><span class="subtext mono">HOST ${esc(e.host_ip||'-')}</span></td>
     <td><b>${esc(e.event||e.event_type||'-')}</b><span class="subtext">${esc(e.program||'-')} · ${esc(e.user||'-')}</span>${e.mitre?`<span class="tag">${esc(e.mitre)}</span>`:''}</td>
     <td class="mono">${esc(e.src_ip||'-')}<span class="subtext">↓ ${esc(e.dst_ip||'-')}</span></td>
-    <td class="reason-cell">${SiemRisk.reasonHtml(e.similar_reasons,currentAnchor,e)}</td>
+    <td class="reason-cell"><b>앵커와의 연관성 근거</b>${SiemRisk.reasonHtml(e.similar_reasons,currentAnchor,e)}<hr><b>에이전트 룰 탐지 · 별도 점수</b>${SiemRisk.detectionHtml(e)}</td>
     <td class="msg">${esc(e.message||e.raw_message||'')}</td>
   </tr>`).join('');
+  restoreDetails(similarBody,opened);
   if(!rows.length) similarBody.innerHTML=`<tr><td colspan="6" class="empty-state">${anchorId?'현재 우선순위·점수 조건에 맞는 연관 로그가 없습니다.':'수집 로그에서 상세 보기를 선택하면 점수와 산정 근거가 표시됩니다.'}</td></tr>`;
 }
 
