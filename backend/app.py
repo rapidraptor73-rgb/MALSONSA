@@ -501,7 +501,7 @@ def api_events():
         held = held_event_ids(c)
         for r in rows:
             r["held"] = r["id"] in held
-        return jsonify({"events": rows})
+        return jsonify({"events": rows, "server_time": now_iso()})
     finally:
         c.close()
 

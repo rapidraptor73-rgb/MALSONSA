@@ -92,6 +92,7 @@ class SiemIntegrationTests(unittest.TestCase):
         self.assertEqual(latest['event_epoch'], int(self.module.parse_time(latest['time']).timestamp()))
         self.assertEqual(latest['event_type'], 'AUTH_FAILURE')
         self.assertEqual(latest['host_ip'], '192.0.2.10')
+        self.assertIsNotNone(self.module.parse_time(self.client.get('/api/events').json['server_time']).tzinfo)
         self.assertEqual(self.client.post('/api/anchors/1/hold').status_code, 200)
         similar = self.client.get('/api/similar/1?min_score=40').json['similar']
         self.assertEqual([event['id'] for event in similar], [2])
