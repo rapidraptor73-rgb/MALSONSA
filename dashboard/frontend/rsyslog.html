@@ -170,7 +170,7 @@ function parseTime(v){
   return null;
 }
 
-function eventTime(e){ return e.time || e.received_at || e.timestamp || ''; }
+function eventTime(e){ return e.time || e.event_time || e.received_at || e.timestamp || ''; }
 
 function ageText(v){
   const d=parseTime(v);

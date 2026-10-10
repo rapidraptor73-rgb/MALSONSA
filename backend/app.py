@@ -151,11 +151,13 @@ def ensure_schema():
                 UPDATE events SET event=event_type
                 WHERE (event IS NULL OR event='') AND event_type IS NOT NULL
             """)
-        if "received_at" in event_cols and "time" in event_cols:
-            c.execute("""
-                UPDATE events SET time=received_at
-                WHERE (time IS NULL OR time='') AND received_at IS NOT NULL
-            """)
+        for legacy_time in ("event_time", "received_at", "timestamp"):
+            if legacy_time in event_cols:
+                c.execute(f"""
+                    UPDATE events SET time={legacy_time}
+                    WHERE (time IS NULL OR time='')
+                      AND {legacy_time} IS NOT NULL AND {legacy_time}<>''
+                """)
 
         c.execute("CREATE INDEX IF NOT EXISTS idx_events_time ON events(time)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_events_host_ip ON events(host_ip)")
@@ -278,16 +280,28 @@ def parse_rsyslog_line(line):
 def insert_event(ev):
     c = db()
     try:
-        c.execute("""
-        INSERT INTO events(
-            time, host_ip, hostname, src_ip, dst_ip, event, user,
-            program, facility, severity, mitre, score, message, raw_line
-        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-        """, (
-            ev["time"], ev["host_ip"], ev["hostname"], ev["src_ip"], ev["dst_ip"],
-            ev["event"], ev["user"], ev["program"], ev["facility"], ev["severity"],
-            ev["mitre"], ev["score"], ev["message"], ev["raw_line"]
-        ))
+        # Preserve the original schema, including its required timestamp columns.
+        values = {name: ev[name] for name in (
+            "time", "host_ip", "hostname", "src_ip", "dst_ip", "event", "user",
+            "program", "facility", "severity", "mitre", "score", "message", "raw_line"
+        )}
+        legacy = {
+            "event_time": ev["time"],
+            "event_epoch": int(parse_time(ev["time"]).timestamp()),
+            "event_type": ev["event"],
+            "host": ev["host_ip"] or ev["hostname"],
+            "raw": ev["raw_line"],
+            "raw_message": ev["message"],
+            "received_at": now_iso(),
+            "payload_json": json.dumps(ev, ensure_ascii=False),
+        }
+        existing = set(cols(c, "events"))
+        values.update({name: value for name, value in legacy.items() if name in existing})
+        names = list(values)
+        c.execute(
+            f"INSERT INTO events({','.join(names)}) VALUES({','.join('?' for _ in names)})",
+            [values[name] for name in names]
+        )
         c.commit()
     finally:
         c.close()

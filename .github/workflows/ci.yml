@@ -51,3 +51,4 @@ jobs:
           version: '11.25.0'
       - run: pnpm install --frozen-lockfile
       - run: pnpm run build
+      - run: node ../../tests/test_event_time.cjs

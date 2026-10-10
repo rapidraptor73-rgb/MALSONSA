@@ -1,6 +1,7 @@
 """Exercise the imported production API with synthetic data in a temporary DB."""
 import importlib.util
 import os
+import sqlite3
 from pathlib import Path
 import tempfile
 import unittest
@@ -24,6 +25,7 @@ class SiemIntegrationTests(unittest.TestCase):
         # The temporary state directory already exists; all DB operations are real.
         with patch.dict(os.environ, env), patch('os.makedirs'), patch('threading.Thread.start'):
             spec.loader.exec_module(self.module)
+        self.module.APP_DIR = self.temp.name
         self.client = self.module.app.test_client()
 
     def add_event(self, time='2026-10-10T15:03:46.082249+09:00', host='192.0.2.10'):
@@ -65,6 +67,34 @@ class SiemIntegrationTests(unittest.TestCase):
         self.assertEqual(self.client.post('/api/hosts', json={'name': 'bad', 'ip': 'invalid'}).status_code, 400)
         self.add_event()
         self.assertEqual(self.client.get('/api/hosts').json['hosts'][0]['event_count'], 1)
+
+    def test_existing_schema_required_timestamps_and_history(self):
+        with sqlite3.connect(self.module.DB_PATH) as c:
+            c.execute('DROP TABLE events')
+            c.execute('''CREATE TABLE events(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_time TEXT NOT NULL, event_epoch INTEGER NOT NULL,
+                host TEXT, event_type TEXT, message TEXT, raw TEXT,
+                src_ip TEXT, dst_ip TEXT, user TEXT, program TEXT,
+                mitre TEXT, payload_json TEXT)''')
+            c.execute('''INSERT INTO events(event_time,event_epoch,event_type,message)
+                VALUES(?,?,?,?)''', ('2026-10-10T15:03:46.082249+09:00', 1791612226,
+                                     'AUTH_FAILURE', 'existing event'))
+        c.close()
+        self.module.ensure_schema()
+        self.add_event('2026-10-10T15:04:46.082249+09:00')
+        events = self.client.get('/api/events').json['events']
+        self.assertEqual(len(events), 2)
+        latest, existing = events
+        self.assertEqual(existing['message'], 'existing event')
+        self.assertEqual(existing['time'], existing['event_time'])
+        self.assertEqual(latest['time'], latest['event_time'])
+        self.assertEqual(latest['event_epoch'], int(self.module.parse_time(latest['time']).timestamp()))
+        self.assertEqual(latest['event_type'], 'AUTH_FAILURE')
+        self.assertEqual(latest['host_ip'], '192.0.2.10')
+        self.assertEqual(self.client.post('/api/anchors/1/hold').status_code, 200)
+        similar = self.client.get('/api/similar/1?min_score=40').json['similar']
+        self.assertEqual([event['id'] for event in similar], [2])
 
 
 if __name__ == '__main__':
