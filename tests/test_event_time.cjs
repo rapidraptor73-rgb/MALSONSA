@@ -1,0 +1,16 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+const html = fs.readFileSync(path.join(__dirname, '../dashboard/frontend/rsyslog.html'), 'utf8');
+const functions = html.slice(html.indexOf('function normalizeIso('), html.indexOf('function ageText('));
+const context = vm.createContext({});
+vm.runInContext(functions, context);
+const timestamp = '2026-10-10T15:03:46.082249+09:00';
+assert.equal(context.eventTime({time: null, event_time: timestamp}), timestamp);
+assert.equal(context.parseTime(context.eventTime({event_time: timestamp})).toISOString(), '2026-10-10T06:03:46.082Z');
+assert.equal(context.eventTime({time: timestamp, event_time: 'old'}), timestamp);
+assert.equal(context.eventTime({received_at: timestamp}), timestamp);
+assert.equal(context.eventTime({}), '');
+assert.equal(context.parseTime('invalid'), null);
+console.log('Legacy event timestamp and microsecond parsing checks passed');
