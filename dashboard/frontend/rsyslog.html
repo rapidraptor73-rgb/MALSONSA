@@ -79,7 +79,7 @@ th{position:sticky;top:0;background:#0d1727;color:#9eafc6;z-index:1}
     <span>정렬: <b>최신 TIME → 과거</b></span>
     <span>API 로드: <b id="apiLoaded">0</b>건 / 시간 파싱 실패: <b id="badTimeCount">0</b>건</span>
     <span>마지막 수집: <b id="lastReceived">-</b></span>
-    <span>현재 시각과 차이: <b id="lastAge">-</b></span>
+    <span>서버 시각과 차이: <b id="lastAge">-</b></span>
   </div>
 
   <section class="panel">
@@ -129,6 +129,7 @@ let hosts=[];
 let selectedHost='ALL';
 let anchorId=null;
 let previousNewestId=null;
+let serverClockOffsetMs=0;
 
 /*
  * Python datetime.isoformat() can emit microseconds:
@@ -172,10 +173,17 @@ function parseTime(v){
 
 function eventTime(e){ return e.time || e.event_time || e.received_at || e.timestamp || ''; }
 
+function updateServerClock(serverTime, requestStarted, requestFinished){
+  const d=parseTime(serverTime);
+  if(d) serverClockOffsetMs=d.getTime()-(requestStarted+requestFinished)/2;
+}
+
+function currentTimeMs(){ return Date.now()+serverClockOffsetMs; }
+
 function ageText(v){
   const d=parseTime(v);
   if(!d) return '시간형식 확인';
-  let s=Math.floor((Date.now()-d.getTime())/1000);
+  let s=Math.floor((currentTimeMs()-d.getTime())/1000);
 
   if(s < -5) return `${Math.abs(s)}초 후`;
   s=Math.max(0,s);
@@ -201,7 +209,7 @@ function timeMatches(e){
   // Do NOT silently hide events just because an old timestamp format is unparsable.
   if(!d) return true;
 
-  const diff=(Date.now()-d.getTime())/1000;
+  const diff=(currentTimeMs()-d.getTime())/1000;
   return diff >= -60 && diff <= sec;
 }
 
@@ -298,12 +306,14 @@ async function loadHosts(){
 
 async function loadEvents(){
   try{
+    const requestStarted=Date.now();
     const r=await fetch('/api/events?limit=1000&_='+Date.now(),{cache:'no-store'});
     if(!r.ok){
       eventsBody.innerHTML=`<tr><td colspan="11" class="bad">/api/events 오류: HTTP ${r.status}</td></tr>`;
       return;
     }
     const j=await r.json();
+    updateServerClock(j.server_time, requestStarted, Date.now());
     allEvents=j.events||[];
     renderTabs();
     renderEvents();
