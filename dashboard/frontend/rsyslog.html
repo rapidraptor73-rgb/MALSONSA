@@ -220,6 +220,19 @@ function filteredEvents(){
     .sort(sortNewest);
 }
 
+function openDetails(container){
+  const opened=new Set();
+  container.querySelectorAll('tr[data-event-id]').forEach(row=>row.querySelectorAll('details').forEach((detail,index)=>{
+    if(detail.open) opened.add(row.dataset.eventId+':'+index);
+  }));
+  return opened;
+}
+function restoreDetails(container,opened){
+  container.querySelectorAll('tr[data-event-id]').forEach(row=>row.querySelectorAll('details').forEach((detail,index)=>{
+    detail.open=opened.has(row.dataset.eventId+':'+index);
+  }));
+}
+
 function renderTabs(){
   const counts={ALL:allEvents.length,LEGACY:allEvents.filter(e=>!e.host_ip).length};
   for(const h of hosts){
@@ -248,6 +261,7 @@ function selectHost(v){
 }
 
 function renderEvents(){
+  const opened=openDetails(eventsBody);
   const rows=filteredEvents();
   eventCount.textContent=rows.length;
   apiLoaded.textContent=allEvents.length;
@@ -262,7 +276,7 @@ function renderEvents(){
   eventsBody.innerHTML=rows.map(e=>{
     const isNew=previousNewestId!==null && Number(e.id)>previousNewestId;
     const badTime=!parseTime(eventTime(e));
-    return `<tr class="${isNew?'newrow':''}">
+    return `<tr data-event-id="${Number(e.id)}" class="${isNew?'newrow':''}">
       <td>${e.held?'<span class="hold">● HOLD</span><br>':''}<button onclick="viewEvent(${Number(e.id)})">상세 보기</button></td>
       <td class="${badTime?'bad':''}"><span class="mono" title="${esc(eventTime(e))}">${esc(displayTime(e))}</span><span class="subtext">${esc(ageText(eventTime(e)))}</span></td>
       <td class="mono">${esc(e.host_ip||'-')}</td>
@@ -273,6 +287,7 @@ function renderEvents(){
       <td class="msg">${esc(e.message||e.raw_message||'')}</td>
     </tr>`;
   }).join('');
+  restoreDetails(eventsBody,opened);
   if(!rows.length) eventsBody.innerHTML='<tr><td colspan="8" class="empty-state">현재 조회 조건에 맞는 로그가 없습니다. 조회 기간이나 검색어를 조정하세요.</td></tr>';
 
   if(allEvents.length){
@@ -375,6 +390,7 @@ function selectPriority(key){
 }
 
 function renderSimilarRows(){
+  const opened=openDetails(similarBody);
   const selected=document.getElementById('priorityFilter').value;
   for(const key of ['critical','high','medium','low']){
     document.getElementById(key+'Count').textContent=anchorId?similarEvents.filter(e=>SiemRisk.priority(e.similar_score).key===key).length:'—';
@@ -383,7 +399,7 @@ function renderSimilarRows(){
   const rows=similarEvents.filter(e=>selected==='all'||SiemRisk.priority(e.similar_score).key===selected)
     .sort((a,b)=>Number(b.similar_score)-Number(a.similar_score)||sortNewest(a,b));
   similarCount.textContent=rows.length;
-  similarBody.innerHTML=rows.map(e=>`<tr class="${SiemRisk.priority(e.similar_score).key}-row">
+  similarBody.innerHTML=rows.map(e=>`<tr data-event-id="${Number(e.id)}" class="${SiemRisk.priority(e.similar_score).key}-row">
     <td>${SiemRisk.scoreBadge(e.similar_score)}</td>
     <td><span class="mono" title="${esc(eventTime(e))}">${esc(displayTime(e))}</span><span class="subtext">${esc(ageText(eventTime(e)))}</span><span class="subtext mono">HOST ${esc(e.host_ip||'-')}</span></td>
     <td><b>${esc(e.event||e.event_type||'-')}</b><span class="subtext">${esc(e.program||'-')} · ${esc(e.user||'-')}</span>${e.mitre?`<span class="tag">${esc(e.mitre)}</span>`:''}</td>
@@ -391,6 +407,7 @@ function renderSimilarRows(){
     <td class="reason-cell"><b>앵커와의 연관성 근거</b>${SiemRisk.reasonHtml(e.similar_reasons,currentAnchor,e)}<hr><b>에이전트 룰 탐지 · 별도 점수</b>${SiemRisk.detectionHtml(e)}</td>
     <td class="msg">${esc(e.message||e.raw_message||'')}</td>
   </tr>`).join('');
+  restoreDetails(similarBody,opened);
   if(!rows.length) similarBody.innerHTML=`<tr><td colspan="6" class="empty-state">${anchorId?'현재 우선순위·점수 조건에 맞는 연관 로그가 없습니다.':'수집 로그에서 상세 보기를 선택하면 점수와 산정 근거가 표시됩니다.'}</td></tr>`;
 }
 
