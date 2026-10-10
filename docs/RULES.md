@@ -37,5 +37,5 @@ Low <60으로 표시합니다. 공격 가설을 검토하는 우선순위이며 
 
 API: `GET/POST /api/rules`, `PATCH/DELETE /api/rules/<id>`, `POST /api/rules/preview`.
 미리보기는 `{ "rule": { ... }, "event_id": 123 }`을 받으며 룰을 저장하지 않습니다.
-v1.0 배포 파일은 기존 릴리스로 유지됩니다. 이 기능이 포함된 소스 패키지는 현재 main에서
+v1.0 배포 파일과 main은 기존 릴리스 상태로 유지됩니다. 이 기능이 포함된 소스 패키지는 develop에서
 `python scripts/build_release.py`로 생성할 수 있습니다.
