@@ -18,6 +18,9 @@ class ReleaseTests(unittest.TestCase):
                 names=tar.getnames()
                 self.assertIn('malsonsa-v1.0/install.sh',names)
                 self.assertIn('malsonsa-v1.0/dashboard/frontend/risk-details.js',names)
+                self.assertIn('malsonsa-v1.0/backend/detection_rules.py',names)
+                self.assertIn('malsonsa-v1.0/dashboard/frontend/rules.html',names)
+                self.assertIn('malsonsa-v1.0/dashboard/frontend/rules.js',names)
                 self.assertEqual(tar.getmember('malsonsa-v1.0/install.sh').mode,0o755)
                 self.assertFalse(any(name.endswith(('.db','.key','.log')) or '.local-tools' in name for name in names))
                 for line in tar.extractfile('malsonsa-v1.0/SHA256SUMS').read().decode().splitlines():
