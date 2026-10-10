@@ -97,6 +97,22 @@ class SiemIntegrationTests(unittest.TestCase):
         similar = self.client.get('/api/similar/1?min_score=40').json['similar']
         self.assertEqual([event['id'] for event in similar], [2])
 
+    def test_offset_restarts_for_rotated_log_even_if_larger(self):
+        log=Path(self.module.LOG_PATH)
+        log.write_text('old line\n',encoding='utf-8')
+        self.module.save_offset(4)
+        self.assertEqual(self.module.load_offset(),4)
+        log.rename(log.with_suffix('.old'))
+        log.write_text('new log content is larger than the old offset\n',encoding='utf-8')
+        self.assertEqual(self.module.load_offset(),0)
+
+    def test_configurable_host_mapping(self):
+        self.module.IP_MAP={}
+        line='2026-10-10T17:40:00+09:00|test|172.16.16.141|user|notice|test|dst=172.16.16.141'
+        self.assertEqual(self.module.parse_rsyslog_line(line)['host_ip'],'172.16.16.141')
+        self.module.IP_MAP={'172.16.16.141':'192.0.2.10'}
+        self.assertEqual(self.module.parse_rsyslog_line(line)['dst_ip'],'192.0.2.10')
+
 
 if __name__ == '__main__':
     unittest.main()

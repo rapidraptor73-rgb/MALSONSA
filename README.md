@@ -1,5 +1,13 @@
 # MALSONSA — 자체 SIEM
 
+## v1.0 자동 설치 패키지
+
+[v1.0 릴리스](https://github.com/rapidraptor73-rgb/MALSONSA/releases/tag/v1.0)의
+`malsonsa-v1.0.tar.gz`를 새 Linux 서버에 풀고 `sudo bash install.sh`로 구축할 수 있습니다.
+기본 접속은 로컬로 제한됩니다. 관제망·도메인·HTTPS 설정과 업그레이드는
+[설치 안내](docs/INSTALL.md)를 참고하세요.
+패키지는 `python scripts/build_release.py`로 생성합니다.
+
 2026-10-10 실행 중인 서버의 자체 SIEM 소스를 가져온 개발 저장소입니다.
 운영 코드의 기능은 변경하지 않았습니다.
 
@@ -59,7 +67,7 @@ rsyslog 수집, 키/값 구조화, 앵커 Hold, 점수·시간·공격 단계 �
 - 브라우저에서 마이크로초·시간대가 포함된 시각의 파싱과 최신 시간 필터.
 - 로그 회전, 수집 offset, 재시작, 기존 DB 스키마와의 호환성.
 - systemd 스냅샷의 `SOC_DB`, `SOC_LOG_FILE`은 현 앱에서 읽지 않습니다. 실제 앱의 `SOC_DB_PATH`, `SOC_RSYSLOG_LOG`, `SOC_STATE_DIR`와 일치 여부를 점검해야 합니다.
-- `172.16.16.141 → 203.230.52.214` 변환이 하드코딩돼 있어 다른 환경 배포 전 설정화가 필요합니다.
+- 기존 설치의 IP 변환은 `SOC_IP_MAP`으로 설정할 수 있습니다. 자동 설치는 새 환경의 IP를 유지합니다.
 
 [운영·배포 안내](docs/operations.md)를 참고하세요.
 
