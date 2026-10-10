@@ -4,43 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>PSC SOC - Rsyslog Correlation</title>
-<style>
-:root{
-  --bg:#07111f;--panel:#111b2c;--line:#26354c;--text:#e8eef7;--muted:#91a3bc;
-  --blue:#0d91ce;--blue2:#147db2;--yellow:#ffd84a;--green:#43d17f;--red:#e05a5a
-}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--text);font-family:Arial,sans-serif}
-header{padding:14px 16px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;background:#0b1525}
-nav{display:flex;gap:8px}
-nav a{color:#d6deeb;text-decoration:none;border:1px solid var(--line);padding:8px 11px;border-radius:7px}
-main{padding:16px}
-.tabs,.toolbar,.statusbar{display:flex;gap:9px;flex-wrap:wrap;align-items:center}
-.tabs{margin:6px 0 14px}
-.tab,button,input,select{background:#0d1727;color:var(--text);border:1px solid #33445e;border-radius:7px;padding:9px 11px}
-button,.tab{cursor:pointer}
-.tab.active,.primary{background:var(--blue2);border-color:#1aa9e9}
-.badge{font-size:11px;color:#b7c7db;margin-left:6px}
-.toolbar{margin-bottom:10px}
-.statusbar{justify-content:space-between;margin-bottom:14px;color:var(--muted);font-size:13px}
-.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:16px}
-.title{padding:13px 16px;border-bottom:1px solid var(--line);font-weight:700}
-.scroll{overflow:auto;max-height:530px}
-table{width:100%;border-collapse:collapse;min-width:1280px}
-th,td{padding:9px 10px;border-bottom:1px solid #202e43;text-align:left;vertical-align:top;font-size:12px}
-th{position:sticky;top:0;background:#0d1727;color:#9eafc6;z-index:1}
-.msg{max-width:460px;word-break:break-word}
-.hold{color:var(--yellow);font-weight:700}
-.kvgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;padding:15px}
-.kv small{display:block;color:var(--muted);margin-bottom:4px}.kv b{font-size:14px}
-.ok{color:var(--green)}.bad{color:var(--red)}.muted{color:var(--muted)}
-.newrow{animation:newflash 3s ease-out}
-@keyframes newflash{0%{background:#153d33}100%{background:transparent}}
-</style>
+<link rel="stylesheet" href="/theme.css?v=20261010-white">
 </head>
 <body>
 <header>
-  <div><b>PSC SOC - Rsyslog Correlation</b></div>
+  <div><h1>Rsyslog Correlation</h1><p>수집 로그를 앵커로 고정하고, 연관된 활동의 검토 우선순위를 확인합니다.</p></div>
   <nav><a href="/">메인</a><a href="/hosts.html">호스트 등록</a></nav>
 </header>
 
@@ -50,7 +18,7 @@ th{position:sticky;top:0;background:#0d1727;color:#9eafc6;z-index:1}
   <div class="toolbar">
     <button class="primary" onclick="refreshAll()">↻ 로그 새로고침</button>
 
-    <select id="timeRange" onchange="renderEvents()">
+    <select id="timeRange" aria-label="로그 조회 기간" onchange="renderEvents()">
       <option value="300" selected>최근 5분</option>
       <option value="900">최근 15분</option>
       <option value="3600">최근 1시간</option>
@@ -59,7 +27,7 @@ th{position:sticky;top:0;background:#0d1727;color:#9eafc6;z-index:1}
       <option value="0">전체</option>
     </select>
 
-    <select id="field">
+    <select id="field" aria-label="검색 필드">
       <option value="src_ip">SRC IP</option>
       <option value="dst_ip">DST IP</option>
       <option value="host_ip">HOST IP</option>
@@ -70,7 +38,7 @@ th{position:sticky;top:0;background:#0d1727;color:#9eafc6;z-index:1}
       <option value="message">MESSAGE</option>
     </select>
 
-    <input id="q" placeholder="검색할 값" oninput="renderEvents()">
+    <input id="q" aria-label="로그 검색" placeholder="IP, 사용자 또는 메시지 검색" oninput="renderEvents()">
     <label><input id="autoRefresh" type="checkbox" checked> 자동 새로고침(3초)</label>
     <span style="margin-left:auto" id="currentView">현재 보기: 전체 관제 대상</span>
   </div>
@@ -83,12 +51,12 @@ th{position:sticky;top:0;background:#0d1727;color:#9eafc6;z-index:1}
   </div>
 
   <section class="panel">
-    <div class="title">Rsyslog Events (<span id="eventCount">0</span>)</div>
+    <div class="title">수집 로그 <span id="eventCount" class="count">0</span><small>로그의 상세 보기를 누르면 아래에 상관분석 결과가 표시됩니다.</small></div>
     <div class="scroll">
       <table>
         <thead><tr>
-          <th>HOLD</th><th>TIME</th><th>AGE</th><th>HOST</th><th>EVENT</th>
-          <th>SRC</th><th>DST</th><th>USER</th><th>PROGRAM</th><th>MITRE</th><th>MESSAGE</th>
+          <th>앵커</th><th>발생 시각</th><th>관제 호스트</th><th>이벤트 / 분류</th>
+          <th>출발지 SRC</th><th>목적지 DST</th><th>메시지</th>
         </tr></thead>
         <tbody id="eventsBody"></tbody>
       </table>
@@ -96,24 +64,32 @@ th{position:sticky;top:0;background:#0d1727;color:#9eafc6;z-index:1}
   </section>
 
   <section class="panel">
-    <div class="title">Anchor Event</div>
+    <div class="title">선택한 앵커 로그 <small>이 로그와 다른 로그를 비교하여 상관점수를 산정합니다.</small></div>
     <div id="anchorBox" class="kvgrid"><span class="muted">HOLD/VIEW한 이벤트를 선택하세요.</span></div>
   </section>
 
+  <h2 class="section-heading">상관분석 우선순위</h2>
+  <p class="legend">상관점수는 앵커와의 연관성입니다. 점수가 높은 로그부터 검토하세요. Critical ≥120 · High 90–119 · Medium 60–89 · Low 0–59점. 아래 건수는 현재 시간창·최소점수·호스트 조건에서 조회된 유사 로그 기준입니다.</p>
+  <div class="risk-summary">
+    <button class="risk-card risk-critical" data-priority="critical" aria-pressed="false" onclick="selectPriority('critical')">CRITICAL · 최우선 검토<strong id="criticalCount">—</strong><small>120점 이상</small></button>
+    <button class="risk-card risk-high" data-priority="high" aria-pressed="false" onclick="selectPriority('high')">HIGH · 우선 검토<strong id="highCount">—</strong><small>90–119점</small></button>
+    <button class="risk-card risk-medium" data-priority="medium" aria-pressed="false" onclick="selectPriority('medium')">MEDIUM · 연관성 검토<strong id="mediumCount">—</strong><small>60–89점</small></button>
+    <button class="risk-card risk-low" data-priority="low" aria-pressed="false" onclick="selectPriority('low')">LOW · 참고 로그<strong id="lowCount">—</strong><small>0–59점</small></button>
+  </div>
   <section class="panel">
-    <div class="title">Similar Events (<span id="similarCount">0</span>)</div>
+    <div class="title">앵커 연관 로그 <span id="similarCount" class="count">0</span><small>상관점수 높은 순 → 같은 점수는 최신순</small></div>
     <div class="toolbar" style="padding:12px;margin:0">
       <label>시간창
         <select id="minutes"><option>30</option><option selected>60</option><option>180</option><option>1440</option></select>분
       </label>
       <label>최소점수 <input id="minScore" type="number" value="60" min="0" max="200" style="width:80px"></label>
       <button onclick="loadSimilar()">Similar 재계산</button>
+      <label class="priority-filter">검토 우선순위 <select id="priorityFilter" onchange="renderSimilarRows()"><option value="all">전체 우선순위</option><option value="critical">Critical</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></label>
     </div>
     <div class="scroll">
-      <table>
+      <table class="similar-table">
         <thead><tr>
-          <th>SCORE</th><th>TIME</th><th>HOST</th><th>EVENT</th><th>SRC</th><th>DST</th>
-          <th>USER</th><th>PROGRAM</th><th>MITRE</th><th>REASON</th><th>MESSAGE</th>
+          <th>우선순위 / 점수</th><th>발생 시각 / 호스트</th><th>이벤트 / 분류</th><th>출발지 → 목적지</th><th>점수 산정 근거</th><th>메시지</th>
         </tr></thead>
         <tbody id="similarBody"></tbody>
       </table>
@@ -121,6 +97,7 @@ th{position:sticky;top:0;background:#0d1727;color:#9eafc6;z-index:1}
   </section>
 </main>
 
+<script src="/risk-details.js?v=20261010-white"></script>
 <script>
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 
@@ -130,6 +107,8 @@ let selectedHost='ALL';
 let anchorId=null;
 let previousNewestId=null;
 let serverClockOffsetMs=0;
+let similarEvents=[];
+let currentAnchor=null;
 
 /*
  * Python datetime.isoformat() can emit microseconds:
@@ -172,6 +151,11 @@ function parseTime(v){
 }
 
 function eventTime(e){ return e.time || e.event_time || e.received_at || e.timestamp || ''; }
+
+function displayTime(e){
+  const d=parseTime(eventTime(e));
+  return d?new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).format(d):'-';
+}
 
 function updateServerClock(serverTime, requestStarted, requestFinished){
   const d=parseTime(serverTime);
@@ -259,6 +243,7 @@ function selectHost(v){
   }
   renderTabs();
   renderEvents();
+  if(anchorId) loadSimilar();
 }
 
 function renderEvents(){
@@ -277,19 +262,16 @@ function renderEvents(){
     const isNew=previousNewestId!==null && Number(e.id)>previousNewestId;
     const badTime=!parseTime(eventTime(e));
     return `<tr class="${isNew?'newrow':''}">
-      <td>${e.held?'<span class="hold">● HOLD</span> ':''}<button onclick="viewEvent(${Number(e.id)})">VIEW</button></td>
-      <td class="${badTime?'bad':''}">${esc(eventTime(e)||'-')}</td>
-      <td>${esc(ageText(eventTime(e)))}</td>
-      <td>${esc(e.host_ip||'-')}</td>
-      <td>${esc(e.event||e.event_type||'-')}</td>
-      <td>${esc(e.src_ip||'-')}</td>
-      <td>${esc(e.dst_ip||'-')}</td>
-      <td>${esc(e.user||'-')}</td>
-      <td>${esc(e.program||'-')}</td>
-      <td>${esc(e.mitre||'-')}</td>
+      <td>${e.held?'<span class="hold">● HOLD</span><br>':''}<button onclick="viewEvent(${Number(e.id)})">상세 보기</button></td>
+      <td class="${badTime?'bad':''}"><span class="mono" title="${esc(eventTime(e))}">${esc(displayTime(e))}</span><span class="subtext">${esc(ageText(eventTime(e)))}</span></td>
+      <td class="mono">${esc(e.host_ip||'-')}</td>
+      <td><b>${esc(e.event||e.event_type||'-')}</b><span class="subtext">${esc(e.program||'-')} · ${esc(e.user||'-')}</span>${e.mitre?`<span class="tag">${esc(e.mitre)}</span>`:''}</td>
+      <td class="mono">${esc(e.src_ip||'-')}</td>
+      <td class="mono">${esc(e.dst_ip||'-')}</td>
       <td class="msg">${esc(e.message||e.raw_message||'')}</td>
     </tr>`;
   }).join('');
+  if(!rows.length) eventsBody.innerHTML='<tr><td colspan="7" class="empty-state">현재 조회 조건에 맞는 로그가 없습니다. 조회 기간이나 검색어를 조정하세요.</td></tr>';
 
   if(allEvents.length){
     previousNewestId=Math.max(...allEvents.map(x=>Number(x.id)||0));
@@ -309,7 +291,7 @@ async function loadEvents(){
     const requestStarted=Date.now();
     const r=await fetch('/api/events?limit=1000&_='+Date.now(),{cache:'no-store'});
     if(!r.ok){
-      eventsBody.innerHTML=`<tr><td colspan="11" class="bad">/api/events 오류: HTTP ${r.status}</td></tr>`;
+      eventsBody.innerHTML=`<tr><td colspan="7" class="bad">/api/events 오류: HTTP ${r.status}</td></tr>`;
       return;
     }
     const j=await r.json();
@@ -318,7 +300,7 @@ async function loadEvents(){
     renderTabs();
     renderEvents();
   }catch(e){
-    eventsBody.innerHTML=`<tr><td colspan="11" class="bad">API 요청 실패: ${esc(e.message)}</td></tr>`;
+    eventsBody.innerHTML=`<tr><td colspan="7" class="bad">API 요청 실패: ${esc(e.message)}</td></tr>`;
   }
 }
 
@@ -332,9 +314,10 @@ async function viewEvent(id){
   if(!e)return;
 
   anchorId=id;
+  currentAnchor=e;
   anchorBox.innerHTML=`
     <div class="kv"><small>LOG ID</small><b>${esc(e.id)}</b></div>
-    <div class="kv"><small>TIME</small><b>${esc(eventTime(e)||'-')}</b></div>
+    <div class="kv"><small>발생 시각 · KST</small><b title="${esc(eventTime(e))}">${esc(displayTime(e))}</b><span class="subtext">${esc(ageText(eventTime(e)))}</span></div>
     <div class="kv"><small>HOST_IP</small><b>${esc(e.host_ip||'-')}</b></div>
     <div class="kv"><small>SRC_IP</small><b>${esc(e.src_ip||'-')}</b></div>
     <div class="kv"><small>DST_IP</small><b>${esc(e.dst_ip||'-')}</b></div>
@@ -366,7 +349,7 @@ async function loadSimilar(){
   const url='/api/similar/'+anchorId+'?minutes='+minutes.value+'&min_score='+minScore.value+'&_='+Date.now();
   const r=await fetch(url,{cache:'no-store'});
   if(!r.ok){
-    similarBody.innerHTML=`<tr><td colspan="11" class="bad">Similar API 오류: HTTP ${r.status}</td></tr>`;
+    similarBody.innerHTML=`<tr><td colspan="6" class="bad">Similar API 오류: HTTP ${r.status}</td></tr>`;
     return;
   }
 
@@ -377,23 +360,38 @@ async function loadSimilar(){
     rows=rows.filter(e=>selectedHost==='LEGACY' ? !e.host_ip : String(e.host_ip||'')===selectedHost);
   }
 
-  rows.sort(sortNewest);
-  similarCount.textContent=rows.length;
+  currentAnchor=j.anchor||currentAnchor;
+  similarEvents=rows;
+  renderSimilarRows();
+}
 
-  similarBody.innerHTML=rows.map(e=>`<tr>
-    <td><b>${esc(e.similar_score)}</b></td>
-    <td>${esc(eventTime(e)||'-')}</td>
-    <td>${esc(e.host_ip||'-')}</td>
-    <td>${esc(e.event||e.event_type||'-')}</td>
-    <td>${esc(e.src_ip||'-')}</td>
-    <td>${esc(e.dst_ip||'-')}</td>
-    <td>${esc(e.user||'-')}</td>
-    <td>${esc(e.program||'-')}</td>
-    <td>${esc(e.mitre||'-')}</td>
-    <td>${esc((e.similar_reasons||[]).join(', '))}</td>
+function selectPriority(key){
+  const filter=document.getElementById('priorityFilter');
+  filter.value=filter.value===key?'all':key;
+  renderSimilarRows();
+}
+
+function renderSimilarRows(){
+  const selected=document.getElementById('priorityFilter').value;
+  for(const key of ['critical','high','medium','low']){
+    document.getElementById(key+'Count').textContent=anchorId?similarEvents.filter(e=>SiemRisk.priority(e.similar_score).key===key).length:'—';
+    document.querySelector('[data-priority="'+key+'"]').setAttribute('aria-pressed',String(selected===key));
+  }
+  const rows=similarEvents.filter(e=>selected==='all'||SiemRisk.priority(e.similar_score).key===selected)
+    .sort((a,b)=>Number(b.similar_score)-Number(a.similar_score)||sortNewest(a,b));
+  similarCount.textContent=rows.length;
+  similarBody.innerHTML=rows.map(e=>`<tr class="${SiemRisk.priority(e.similar_score).key}-row">
+    <td>${SiemRisk.scoreBadge(e.similar_score)}</td>
+    <td><span class="mono" title="${esc(eventTime(e))}">${esc(displayTime(e))}</span><span class="subtext">${esc(ageText(eventTime(e)))}</span><span class="subtext mono">HOST ${esc(e.host_ip||'-')}</span></td>
+    <td><b>${esc(e.event||e.event_type||'-')}</b><span class="subtext">${esc(e.program||'-')} · ${esc(e.user||'-')}</span>${e.mitre?`<span class="tag">${esc(e.mitre)}</span>`:''}</td>
+    <td class="mono">${esc(e.src_ip||'-')}<span class="subtext">↓ ${esc(e.dst_ip||'-')}</span></td>
+    <td class="reason-cell">${SiemRisk.reasonHtml(e.similar_reasons,currentAnchor,e)}</td>
     <td class="msg">${esc(e.message||e.raw_message||'')}</td>
   </tr>`).join('');
+  if(!rows.length) similarBody.innerHTML=`<tr><td colspan="6" class="empty-state">${anchorId?'현재 우선순위·점수 조건에 맞는 연관 로그가 없습니다.':'수집 로그에서 상세 보기를 선택하면 점수와 산정 근거가 표시됩니다.'}</td></tr>`;
 }
+
+renderSimilarRows();
 
 refreshAll();
 
