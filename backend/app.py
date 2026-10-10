@@ -10,11 +10,15 @@ from datetime import datetime, timezone
 
 from flask import Flask, jsonify, request
 
-APP_DIR = "/opt/soc/backend"
+APP_DIR = os.environ.get("SOC_APP_DIR", "/opt/soc/backend")
 DB_PATH = os.environ.get("SOC_DB_PATH", os.path.join(APP_DIR, "siem.db"))
 LOG_PATH = os.environ.get("SOC_RSYSLOG_LOG", "/var/log/soc/all-rsyslog.log")
 STATE_DIR = os.environ.get("SOC_STATE_DIR", "/var/lib/soc-siem")
 OFFSET_FILE = os.path.join(STATE_DIR, "rsyslog.offset.json")
+IP_MAP = json.loads(os.environ.get("SOC_IP_MAP", '{"172.16.16.141":"203.230.52.214"}'))
+if not isinstance(IP_MAP, dict):
+    raise ValueError("SOC_IP_MAP must be a JSON object")
+IP_MAP = {str(ipaddress.ip_address(k)): str(ipaddress.ip_address(v)) for k,v in IP_MAP.items()}
 
 app = Flask(__name__)
 
@@ -227,8 +231,7 @@ def parse_rsyslog_line(line):
         message = raw
 
     host_ip = valid_ip((host_ip or "").strip())
-    if host_ip == "172.16.16.141":
-        host_ip = "203.230.52.214"
+    host_ip = IP_MAP.get(host_ip, host_ip)
     message = (message or "").strip()
 
     src_ip = None
@@ -252,8 +255,7 @@ def parse_rsyslog_line(line):
 
     # For endpoint logs, if destination was not explicitly embedded,
     # the monitored host is the natural destination.
-    if dst_ip == "172.16.16.141":
-        dst_ip = "203.230.52.214"
+    dst_ip = IP_MAP.get(dst_ip, dst_ip)
     if not dst_ip and host_ip:
         dst_ip = host_ip
 
@@ -309,38 +311,58 @@ def insert_event(ev):
 def load_offset():
     try:
         with open(OFFSET_FILE, "r", encoding="utf-8") as f:
-            return int(json.load(f).get("offset", 0))
+            state = json.load(f)
+        stat = os.stat(LOG_PATH)
+        if "inode" in state and (state["inode"], state.get("device")) != (stat.st_ino, stat.st_dev):
+            return 0
+        offset = int(state.get("offset", 0))
+        return offset if offset <= stat.st_size else 0
     except Exception:
         return 0
 
-def save_offset(offset):
+def save_offset(offset, file_stat=None):
     tmp = OFFSET_FILE + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
-        json.dump({"offset": offset}, f)
+        stat = file_stat or os.stat(LOG_PATH)
+        json.dump({"offset": offset, "inode": stat.st_ino, "device": stat.st_dev}, f)
     os.replace(tmp, OFFSET_FILE)
 
 def ingest_loop():
     offset = load_offset()
+    identity = None
     while True:
         try:
             if not os.path.exists(LOG_PATH):
                 time.sleep(2)
                 continue
 
-            size = os.path.getsize(LOG_PATH)
-            if size < offset:
+            stat = os.stat(LOG_PATH)
+            current_identity = (stat.st_dev, stat.st_ino)
+            if (identity is not None and identity != current_identity) or stat.st_size < offset:
                 offset = 0
+            identity = current_identity
 
             with open(LOG_PATH, "r", encoding="utf-8", errors="replace") as f:
+                opened_stat = os.fstat(f.fileno())
+                opened_identity = (opened_stat.st_dev, opened_stat.st_ino)
+                if opened_identity != identity:
+                    offset = 0
+                    identity = opened_identity
                 f.seek(offset)
                 while True:
+                    line_start = f.tell()
                     line = f.readline()
                     if not line:
                         break
+                    if not line.endswith("\n"):
+                        f.seek(line_start)
+                        break
                     if line.strip():
                         insert_event(parse_rsyslog_line(line))
+                    offset = f.tell()
+                    save_offset(offset, opened_stat)
                 offset = f.tell()
-                save_offset(offset)
+                save_offset(offset, opened_stat)
         except Exception as e:
             print(f"[INGEST] {e}", flush=True)
         time.sleep(1)

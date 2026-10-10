@@ -7,6 +7,54 @@ on:
 permissions:
   contents: read
 jobs:
+  installer-smoke:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and verify release archive
+        run: |
+          python3 scripts/build_release.py
+          cd release
+          sha256sum -c SHA256SUMS
+          tar -xzf malsonsa-v1.0.tar.gz
+          cd malsonsa-v1.0
+          sha256sum -c SHA256SUMS
+          bash -n install.sh
+      - name: Fresh install from packaged sources
+        run: sudo bash release/malsonsa-v1.0/install.sh --hostname localhost --web-port 18088 --backend-port 18089 --syslog-port 15514
+      - name: Test TCP UDP UI and correlation
+        run: sudo python3 release/malsonsa-v1.0/scripts/verify_install.py --web-port 18088 --syslog-port 15514 --token-file release/probe.txt
+      - name: Upgrade and preserve existing database
+        run: |
+          sudo bash release/malsonsa-v1.0/install.sh --upgrade --skip-os-packages --hostname localhost --web-port 18088 --backend-port 18089 --syslog-port 15514
+          sudo python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+          subprocess.run(['python3','release/malsonsa-v1.0/scripts/verify_install.py','--web-port','18088','--syslog-port','15514','--expect-token',Path('release/probe.txt').read_text()],check=True)
+          PY
+          sudo python3 release/malsonsa-v1.0/scripts/verify_install.py --web-port 18088 --syslog-port 15514
+          sudo python3 - <<'PY'
+          import sqlite3
+          c=sqlite3.connect('/var/lib/soc-siem/siem.db')
+          assert c.execute('SELECT COUNT(*) FROM events').fetchone()[0] >= 4
+          c.close()
+          PY
+      - name: Verify ingestion after log rotation
+        run: |
+          sudo logrotate -f /etc/logrotate.d/malsonsa
+          sleep 2
+          sudo python3 release/malsonsa-v1.0/scripts/verify_install.py --web-port 18088 --syslog-port 15514
+      - name: Service diagnostics
+        if: failure()
+        run: |
+          sudo systemctl status soc-siem soc-event-enricher rsyslog nginx --no-pager || true
+          sudo journalctl -u soc-siem -u soc-event-enricher -u rsyslog -n 100 --no-pager
+      - uses: actions/upload-artifact@v4
+        with:
+          name: malsonsa-v1.0-package
+          path: |
+            release/malsonsa-v1.0.tar.gz
+            release/SHA256SUMS
   merge-policy:
     runs-on: ubuntu-latest
     steps:
