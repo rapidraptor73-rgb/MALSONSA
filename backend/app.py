@@ -51,6 +51,7 @@ def now_iso():
 def db():
     c = sqlite3.connect(DB_PATH, timeout=20)
     c.row_factory = sqlite3.Row
+    c.create_function('soc_casefold', 1, lambda value: str(value or '').casefold())
     return c
 
 def table_exists(c, name):
@@ -523,7 +524,7 @@ def api_events():
         held = held_event_ids(c)
         for r in rows:
             r["held"] = r["id"] in held
-        return jsonify({"events": rows, "server_time": now_iso()})
+        return jsonify({"events": annotate_rules(rows), "server_time": now_iso()})
     finally:
         c.close()
 
@@ -570,7 +571,7 @@ def api_search():
             x = dict(r)
             x["held"] = x["id"] in held
             out.append(x)
-        return jsonify({"events": out})
+        return jsonify({"events": annotate_rules(out)})
     finally:
         c.close()
 
@@ -631,7 +632,7 @@ def api_anchors():
                 except Exception:
                     pass
                 out.append(x)
-        return jsonify({"anchors":out})
+        return jsonify({"anchors":annotate_rules(out)})
     finally:
         c.close()
 
@@ -681,10 +682,10 @@ def api_similar(event_id):
 
     out.sort(key=lambda x: (-x["similar_score"], -x["id"]))
     return jsonify({
-        "anchor": anchor,
+        "anchor": annotate_rules([anchor])[0],
         "min_score": min_score,
         "minutes": minutes,
-        "similar": out[:500]
+        "similar": annotate_rules(out[:500])
     })
 
 @app.get("/api/hosts")
@@ -782,6 +783,8 @@ def api_update_host(host_id):
 def api_delete_host(host_id):
     c = db()
     try:
+        if c.execute("SELECT 1 FROM detection_rules WHERE host_id=? LIMIT 1", (host_id,)).fetchone():
+            return jsonify({"error":"연결된 관제 룰을 먼저 삭제하거나 다른 에이전트로 이동하세요."}), 409
         cur = c.execute("DELETE FROM monitored_hosts WHERE id=?", (host_id,))
         c.commit()
         if cur.rowcount == 0:
@@ -800,6 +803,11 @@ def start_ingestor():
     t.start()
 
 ensure_schema()
+import importlib.util
+_rules_spec = importlib.util.spec_from_file_location('soc_detection_rules', os.path.join(os.path.dirname(__file__), 'detection_rules.py'))
+_rules_module = importlib.util.module_from_spec(_rules_spec)
+_rules_spec.loader.exec_module(_rules_module)
+annotate_rules = _rules_module.register_rules(app, db, now_iso)
 start_ingestor()
 
 if __name__ == "__main__":

@@ -68,6 +68,72 @@ class SiemIntegrationTests(unittest.TestCase):
         self.add_event()
         self.assertEqual(self.client.get('/api/hosts').json['hosts'][0]['event_count'], 1)
 
+    def rule(self, agent_id, **changes):
+        data = dict(host_id=agent_id, name='SSH 반복 실패', attack='SSH 무차별 대입',
+                    points=120, reason='같은 출발지에서 인증 실패가 반복되어 암호 추측을 의심합니다.',
+                    conditions=[dict(field='event',operator='equals',value='AUTH_FAILURE')],
+                    min_hits=2, window_seconds=300, group_by='src_ip', enabled=True)
+        data.update(changes)
+        return data
+
+    def test_agent_rule_counts_past_hits_and_separates_hosts(self):
+        host=self.client.post('/api/hosts',json={'name':'agent','ip':'192.0.2.10'}).json['id']
+        result=self.client.post('/api/rules',json=self.rule(host))
+        self.assertEqual(result.status_code,201)
+        self.add_event('2026-10-10T15:00:00+09:00')
+        self.add_event('2026-10-10T15:01:00+09:00','192.0.2.11')
+        self.add_event('2026-10-10T15:02:00+09:00')
+        self.add_event('2026-10-10T15:12:00+09:00')
+        events={e['id']:e for e in self.client.get('/api/events').json['events']}
+        self.assertEqual([events[i]['detection_score'] for i in range(1,5)],[0,0,120,0])
+        detection=events[3]['detections'][0]
+        self.assertEqual(detection['hits'],2)
+        self.assertEqual(detection['evidence'][0]['actual'],'AUTH_FAILURE')
+        self.assertEqual(self.client.post('/api/rules/preview',json={'rule':self.rule(host),'event_id':3}).json['matched'],True)
+        self.assertEqual(self.client.post('/api/rules/preview',json={'rule':self.rule(host),'event_id':1}).json['matched'],False)
+        similar=self.client.get('/api/similar/1?min_score=0').json['similar']
+        self.assertEqual(next(e for e in similar if e['id']==3)['detection_score'],120)
+
+    def test_rule_crud_disabled_host_and_retrospective_evaluation(self):
+        host=self.client.post('/api/hosts',json={'name':'agent','ip':'192.0.2.10'}).json['id']
+        self.add_event()
+        rule_id=self.client.post('/api/rules',json=self.rule(host,min_hits=1)).json['id']
+        self.assertEqual(self.client.get('/api/events').json['events'][0]['detection_score'],120)
+        self.assertEqual(self.client.delete('/api/hosts/'+str(host)).status_code,409)
+        self.assertEqual(self.client.patch('/api/rules/'+str(rule_id),json={'points':90}).status_code,200)
+        self.assertEqual(self.client.get('/api/search?q=198.51.100.20').json['events'][0]['detection_score'],90)
+        self.client.patch('/api/hosts/'+str(host),json={'enabled':False})
+        self.assertEqual(self.client.get('/api/events').json['events'][0]['detection_score'],0)
+        self.client.patch('/api/hosts/'+str(host),json={'enabled':True})
+        self.client.patch('/api/rules/'+str(rule_id),json={'enabled':False})
+        self.assertEqual(self.client.get('/api/events').json['events'][0]['detection_score'],0)
+        self.assertEqual(self.client.get('/api/rules').json['rules'][0]['reason'],self.rule(host)['reason'])
+        self.assertEqual(self.client.delete('/api/rules/'+str(rule_id)).status_code,200)
+        self.assertEqual(self.client.delete('/api/hosts/'+str(host)).status_code,200)
+
+    def test_rule_validation_and_literal_conditions(self):
+        host=self.client.post('/api/hosts',json={'name':'agent','ip':'192.0.2.10'}).json['id']
+        for changes in [{'points':-1},{'points':True},{'host_id':999},{'conditions':[]},
+                        {'conditions':[dict(field='message); DROP TABLE events;',operator='contains',value='x')]},
+                        {'conditions':[dict(field='message',operator='regex',value='.*')]}]:
+            with self.subTest(changes=changes):
+                self.assertEqual(self.client.post('/api/rules',json=self.rule(host,**changes)).status_code,400)
+        self.add_event()
+        self.client.post('/api/rules',json=self.rule(host,min_hits=1,conditions=[dict(field='message',operator='contains',value='%')]))
+        self.assertEqual(self.client.get('/api/events').json['events'][0]['detection_score'],0)
+        self.client.post('/api/rules',json=self.rule(host,min_hits=1,conditions=[dict(field='message',operator='contains',value='FAILED PASSWORD')]))
+        self.assertEqual(self.client.get('/api/events').json['events'][0]['detection_score'],120)
+
+    def test_multiple_rule_points_and_any_condition(self):
+        host=self.client.post('/api/hosts',json={'name':'agent','ip':'192.0.2.10'}).json['id']
+        self.add_event()
+        self.client.post('/api/rules',json=self.rule(host,min_hits=1,points=60))
+        self.client.post('/api/rules',json=self.rule(host,min_hits=1,points=30,match_mode='any',conditions=[dict(field='program',operator='equals',value='sudo'),dict(field='user',operator='equals',value='analyst')]))
+        event=self.client.get('/api/events').json['events'][0]
+        self.assertEqual(event['detection_score'],90)
+        self.assertEqual(len(event['detections']),2)
+        self.assertEqual(len(event['detections'][1]['evidence']),1)
+
     def test_existing_schema_required_timestamps_and_history(self):
         with sqlite3.connect(self.module.DB_PATH) as c:
             c.execute('DROP TABLE events')
