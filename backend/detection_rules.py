@@ -99,7 +99,7 @@ def register_rules(app, db, now_iso):
             min_hits INTEGER NOT NULL, window_seconds INTEGER NOT NULL,
             group_by TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)''')
         c.execute('CREATE INDEX IF NOT EXISTS idx_detection_rules_host ON detection_rules(host_id,enabled)')
-        c.execute('CREATE INDEX IF NOT EXISTS idx_events_rule_time ON events(host_ip,time)')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_events_rule_time ON events(host_ip,julianday(time))')
         c.commit()
     finally: c.close()
 
@@ -141,7 +141,7 @@ def register_rules(app, db, now_iso):
             rule = validate(data)
             host = c.execute('SELECT id FROM monitored_hosts WHERE id=?', (rule['host_id'],)).fetchone()
             if not host: raise ValueError('등록된 에이전트를 선택하세요.')
-            if rule_id is None and c.execute('SELECT COUNT(*) FROM detection_rules WHERE host_id=?', (rule['host_id'],)).fetchone()[0] >= 100:
+            if c.execute('SELECT COUNT(*) FROM detection_rules WHERE host_id=? AND id<>?', (rule['host_id'], rule_id or 0)).fetchone()[0] >= 100:
                 raise ValueError('에이전트당 최대 100개 룰을 지원합니다.')
             fields = list(rule)
             values = [json.dumps(rule[key], ensure_ascii=False) if key == 'conditions' else rule[key] for key in fields]

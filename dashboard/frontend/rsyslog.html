@@ -41,6 +41,7 @@
 
     <input id="q" aria-label="로그 검색" placeholder="IP, 사용자 또는 메시지 검색" oninput="renderEvents()">
     <label><input id="autoRefresh" type="checkbox" checked> 자동 새로고침(3초)</label>
+    <select id="detectionFilter" aria-label="관제 룰 탐지 필터" onchange="renderEvents()"><option value="all">전체 로그</option><option value="matched">룰 탐지 로그만</option><option value="critical">탐지 Critical ≥120</option><option value="high">탐지 High 90–119</option><option value="medium">탐지 Medium 60–89</option><option value="low">탐지 Low 1–59</option></select>
     <span style="margin-left:auto" id="currentView">현재 보기: 전체 관제 대상</span>
   </div>
 
@@ -215,8 +216,10 @@ function sortNewest(a,b){
 }
 
 function filteredEvents(){
+  const detectionFilter=document.getElementById('detectionFilter').value;
   return allEvents
     .filter(e=>hostMatches(e) && timeMatches(e) && searchMatches(e))
+    .filter(e=>detectionFilter==='all'||(Number(e.detection_score)>0&&(detectionFilter==='matched'||SiemRisk.priority(e.detection_score).key===detectionFilter)))
     .sort(sortNewest);
 }
 
