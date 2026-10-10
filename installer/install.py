@@ -84,6 +84,8 @@ def validate(args):
     if args.host_ip:
         args.host_ip = str(ipaddress.ip_address(args.host_ip))
     args.allow_source = [str(ipaddress.ip_network(v, strict=False)) for v in args.allow_source]
+    if any(ipaddress.ip_network(v).prefixlen == 0 for v in args.allow_source):
+        raise ValueError('--allow-source must specify a trusted network narrower than /0')
     if (not ipaddress.ip_address(args.bind).is_loopback or not ipaddress.ip_address(args.syslog_bind).is_loopback) and not args.allow_source:
         raise ValueError('external listeners require at least one --allow-source trusted CIDR')
     if bool(args.tls_cert) != bool(args.tls_key):
@@ -166,7 +168,11 @@ WantedBy=multi-user.target
     }}
 }}
 '''
-    senders = ', '.join(['127.0.0.1', '::1']+args.allow_source)
+    sender_networks = [ipaddress.ip_network(v) for v in args.allow_source]
+    senders = ', '.join(['127.0.0.1', '[::1]/128'] + [
+        f'[{network.network_address}]/{network.prefixlen}' if network.version == 6 else str(network)
+        for network in sender_networks
+    ])
     rsyslog = f'''# Managed by MALSONSA. Dedicated receiver; do not duplicate these inputs.
 module(load="imtcp")
 module(load="imudp")

@@ -28,7 +28,12 @@ class InstallerTests(unittest.TestCase):
         conf=installer.configs(args)
         self.assertIn('allow 192.0.2.0/24;',conf['/etc/nginx/conf.d/malsonsa.conf'])
         self.assertIn('deny all;',conf['/etc/nginx/conf.d/malsonsa.conf'])
-        self.assertIn('$AllowedSender TCP, 127.0.0.1, ::1, 192.0.2.0/24',conf['/etc/rsyslog.d/10-malsonsa.conf'])
+        self.assertIn('$AllowedSender TCP, 127.0.0.1, [::1]/128, 192.0.2.0/24',conf['/etc/rsyslog.d/10-malsonsa.conf'])
+
+    def test_ipv6_sender_syntax(self):
+        conf=installer.configs(self.args('--allow-source','2001:db8::/32'))
+        self.assertIn('[2001:db8::]/32',conf['/etc/rsyslog.d/10-malsonsa.conf'])
+        with self.assertRaises(ValueError): self.args('--allow-source','::/0')
 
     def test_invalid_configuration_rejected(self):
         for values in [('--hostname','x;root /tmp;'),('--bind','not-ip'),('--web-port','8000'),('--ip-map','[]'),('--ip-map','{"x":"y"}')]:
