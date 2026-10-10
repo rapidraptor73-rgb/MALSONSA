@@ -7,11 +7,11 @@ from pathlib import Path
 import tarfile
 
 ROOT=Path(__file__).resolve().parents[1]
-FILES=['VERSION','install.sh','README.md','docs/INSTALL.md','installer/install.py',
+FILES=['VERSION','install.sh','README.md','docs/INSTALL.md','docs/RULES.md','installer/install.py',
        'scripts/verify_install.py','scripts/build_release.py',
-       'backend/app.py','backend/hosts_api.py','backend/soc_event_enricher.py','backend/verify_src.py',
+       'backend/app.py','backend/detection_rules.py','backend/hosts_api.py','backend/soc_event_enricher.py','backend/verify_src.py',
        'backend/requirements.txt','backend/requirements.lock.txt']
-FILES += ['dashboard/frontend/'+name for name in ['index.html','hosts.html','rsyslog.html','theme.css','risk-details.js','site-config.js']]
+FILES += ['dashboard/frontend/'+name for name in ['index.html','hosts.html','rsyslog.html','rules.html','rules.js','theme.css','risk-details.js','site-config.js']]
 
 
 def build(output):
