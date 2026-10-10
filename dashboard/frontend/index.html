@@ -823,6 +823,7 @@
     </style>
 
 <link rel="stylesheet" href="/theme.css?v=20261010-white">
+<script src="/site-config.js?v=1.0"></script>
 </head>
 
 
@@ -973,7 +974,7 @@
                 </h1>
 
                 <p>
-                    soc.psc.co.kr · Purple Team Integrated SOC
+                    <span data-soc-hostname>soc.psc.co.kr</span> · Purple Team Integrated SOC
                 </p>
 
             </div>
@@ -1202,7 +1203,7 @@
 
                     <div class="rsyslog-description">
 
-                        203.230.52.214 로컬 rsyslog 분석
+                        <span data-soc-address>203.230.52.214</span> 로컬 rsyslog 분석
 
                         <br>
 
@@ -1484,7 +1485,7 @@
                         </span>
 
                         <span>
-                            203.230.52.214
+                            <span data-soc-address>203.230.52.214</span>
                         </span>
 
                     </div>
@@ -1497,7 +1498,7 @@
                         </span>
 
                         <span>
-                            soc.psc.co.kr
+                            <span data-soc-hostname>soc.psc.co.kr</span>
                         </span>
 
                     </div>
@@ -1995,11 +1996,15 @@
    SIEM SERVICES
 ========================================================= */
 
+const siteConfig=window.SOC_CONFIG||{};
+document.querySelectorAll("[data-soc-address]").forEach(e=>e.textContent=siteConfig.host_ip||location.hostname);
+document.querySelectorAll("[data-soc-hostname]").forEach(e=>e.textContent=siteConfig.hostname||location.hostname);
+
 const defaultServices = {
 
     wazuh: {
         name: "Wazuh",
-        url: "https://172.16.16.130",
+        url: siteConfig.siem_urls?.wazuh || "",
         mode: "iframe"
     },
 
@@ -2087,13 +2092,13 @@ function seedTargets() {
         {
 
             id:
-                "local-soc-141",
+                "local-soc",
 
             name:
                 "PSC-SOC",
 
             address:
-                "203.230.52.214",
+                siteConfig.host_ip || location.hostname,
 
             type:
                 "Linux Server",
