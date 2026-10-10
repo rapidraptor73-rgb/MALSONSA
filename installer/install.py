@@ -18,7 +18,7 @@ import time
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
-FRONTEND = ['index.html', 'hosts.html', 'rsyslog.html', 'rules.html', 'rules.js', 'theme.css', 'risk-details.js']
+FRONTEND = ['index.html', 'hosts.html', 'rsyslog.html', 'theme.css', 'risk-details.js']
 APP = Path('/opt/soc/backend')
 WEB = Path('/usr/share/nginx/html/soc/frontend')
 DATA = Path('/var/lib/soc-siem')
