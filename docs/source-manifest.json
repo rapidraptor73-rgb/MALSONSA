@@ -1,0 +1,155 @@
+{
+  "captured_on": "2026-10-10",
+  "files": [
+    {
+      "source": "/opt/soc/backend/app.py",
+      "repository": "backend/app.py",
+      "sha256": "5137d6d056226781debb48356778495cd9d77e2824cb539641100fb7d701d028"
+    },
+    {
+      "source": "/opt/soc/backend/hosts_api.py",
+      "repository": "backend/hosts_api.py",
+      "sha256": "ca22fd172a19c7908667fc69143b67c8970e245b38083963baede95d89b99879"
+    },
+    {
+      "source": "/opt/soc/backend/soc_event_enricher.py",
+      "repository": "backend/soc_event_enricher.py",
+      "sha256": "2890fd43440653c8163fb59da90adfcee7de4b4e0ff20d987f255af65baef504"
+    },
+    {
+      "source": "/opt/soc/backend/verify_src.py",
+      "repository": "backend/verify_src.py",
+      "sha256": "29a9dfb3dd0595e67bae8fdafdd4cd431735f318259461e62794554b3a7c747b"
+    },
+    {
+      "source": "/usr/share/nginx/html/soc/backend/app/__init__.py",
+      "repository": "dashboard/backend/app/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "/usr/share/nginx/html/soc/backend/app/seed.py",
+      "repository": "dashboard/backend/app/seed.py",
+      "sha256": "fe2c87f10f7f1ec00ca4143e66bdb80603ecc59b6f0411c8d357511c934cd20a"
+    },
+    {
+      "source": "/usr/share/nginx/html/soc/backend/app/schemas.py",
+      "repository": "dashboard/backend/app/schemas.py",
+      "sha256": "071cf5d68d7207b84fe0d611148c12f4fa418901bbb4ae92d01f8e183426d0a8"
+    },
+    {
+      "source": "/usr/share/nginx/html/soc/backend/app/models.py",
+      "repository": "dashboard/backend/app/models.py",
+      "sha256": "64ed12f3d4d79236b1c77f755393ccb627f7a403083ea1e12102260bef424273"
+    },
+    {
+      "source": "/usr/share/nginx/html/soc/backend/app/main.py",
+      "repository": "dashboard/backend/app/main.py",
+      "sha256": "81fe1a063a53447e08b5b308e2c144bac0bd476fbdc82729691172eef7443cc6"
+    },
+    {
+      "source": "/usr/share/nginx/html/soc/backend/app/database.py",
+      "repository": "dashboard/backend/app/database.py",
+      "sha256": "2b31b059d0d3f0e6880beca25eabfff1cfa15d652172eefb4c134d9b1e93f08e"
+    },
+    {
+      "source": "/usr/share/nginx/html/soc/backend/app/config.py",
+      "repository": "dashboard/backend/app/config.py",
+      "sha256": "1cb11685b1c45a939012c345f54b5ca878ff97287b34716c6744bbb9172676d2"
+    },
+    {
+      "source": "/usr/share/nginx/html/soc/backend/requirements.txt",
+      "repository": "dashboard/backend/requirements.txt",
+      "sha256": "b1f2da8927df3e4150bd39fc4fd4055b4db0d13f28ecb342bbee51ce3ae29ba1"
+    },
+    {
+      "source": "/usr/share/nginx/html/soc/backend/Dockerfile",
+      "repository": "dashboard/backend/Dockerfile",
+      "sha256": "f3222565c90d5ae30b548560046b890cdcab7fd0377e49ac37d4ac2bd81893ae"
+    },
+    {
+      "source": "/usr/share/nginx/html/soc/backend/.env.example",
+      "repository": "dashboard/backend/.env.example",
+      "sha256": "8a18511ed37f63d9fe7d9540686e8727e161c0a69a40679fbb1e9d7c4c598220"
+    },
+    {
+      "source": "/usr/share/nginx/html/soc/frontend/src/styles.css",
+      "repository": "dashboard/frontend/src/styles.css",
+      "sha256": "0f6c0461072c8f36290421586dc5b08f5fee5fe370fe22d4ecc2b8cc21daa5ce"
+    },
+    {
+      "source": "/usr/share/nginx/html/soc/frontend/src/main.jsx",
+      "repository": "dashboard/frontend/src/main.jsx",
+      "sha256": "f42ba105906d7af1a505add6d89a38027246f5bbdf46b02597c5430fefb7dc6b"
+    },
+    {
+      "source": "/usr/share/nginx/html/soc/frontend/package.json",
+      "repository": "dashboard/frontend/package.json",
+      "sha256": "00ebcca500a1e420e133295e27c93a07d55cf87fcba0f23dabe8e71b429e2e97"
+    },
+    {
+      "source": "/usr/share/nginx/html/soc/frontend/index.html",
+      "repository": "dashboard/frontend/index.html",
+      "sha256": "cb9228dc2bdb0b9a55c935261fdb8b5143239089c0c9e83460f726d6bde130c4"
+    },
+    {
+      "source": "/usr/share/nginx/html/soc/frontend/Dockerfile",
+      "repository": "dashboard/frontend/Dockerfile",
+      "sha256": "57618b6ff4df62f3f0cdcca624afe494a975bd8407eb43ab21d49a3cf4e03cec"
+    },
+    {
+      "source": "/usr/share/nginx/html/soc/frontend/.env.example",
+      "repository": "dashboard/frontend/.env.example",
+      "sha256": "8efca76609c1c17e70cd8d62e811085e611df91baf15f63f948326c0cca643ae"
+    },
+    {
+      "source": "/usr/share/nginx/html/soc/frontend/hosts.html",
+      "repository": "dashboard/frontend/hosts.html",
+      "sha256": "59b4c5ea8a7f98685a9d75280e09512f17465562cee4a3ccab6b617579d47193"
+    },
+    {
+      "source": "/usr/share/nginx/html/soc/frontend/rsyslog.html",
+      "repository": "dashboard/frontend/rsyslog.html",
+      "sha256": "456ca4babf3b8d2e082ea79488e1639d3445e4bee20b68f708297c1d00408f44"
+    },
+    {
+      "source": "/usr/share/nginx/html/soc/docker-compose.yml",
+      "repository": "dashboard/docker-compose.yml",
+      "sha256": "13e5d6feffcbde9b1f9a0d0c72d359b66fb996e8dfa35bd0103a65d8b10d38a0"
+    },
+    {
+      "source": "/usr/share/nginx/html/soc/README.md",
+      "repository": "dashboard/README.md",
+      "sha256": "e7c0d6401dc9066c9a11c59ee07378be025c1da2426089b23c269f0df4f97eb9"
+    },
+    {
+      "source": "/etc/systemd/system/soc-siem.service",
+      "repository": "deploy/systemd/soc-siem.service",
+      "sha256": "ecec5ed9eedfeb0372e15772355bdcefb2ee67c36b737995d6b87410b63eb901"
+    },
+    {
+      "source": "/etc/systemd/system/soc-event-enricher.service",
+      "repository": "deploy/systemd/soc-event-enricher.service",
+      "sha256": "23ee335a2ac3b59ffdd635a1305ba9ca83f72eb8a7e903437709a1c14ed54d6c"
+    },
+    {
+      "source": "/etc/rsyslog.d/10-soc-input.conf",
+      "repository": "deploy/rsyslog/10-soc-input.conf",
+      "sha256": "0b4dc3b2d4da8872deb05ee3ee906c499cb91eed68cb6536ac9526cebde3543d"
+    },
+    {
+      "source": "/etc/rsyslog.d/20-soc-store.conf",
+      "repository": "deploy/rsyslog/20-soc-store.conf",
+      "sha256": "4dfed81248008580c1f8f0df9d01a2ff06e461e1a51cca3a4d8828a7afbabcec"
+    },
+    {
+      "source": "/etc/rsyslog.d/30-soc-mvp.conf",
+      "repository": "deploy/rsyslog/30-soc-mvp.conf",
+      "sha256": "0020ec97467914075c806fc67be024cb727637fd8e47014c58f364429aa15b80"
+    },
+    {
+      "source": "/etc/nginx/conf.d/soc.psc.co.kr.conf",
+      "repository": "deploy/nginx/soc.psc.co.kr.conf",
+      "sha256": "e9fe0bdef6523b1460024bc7e22f1f7de372976e8f3a5a051cc086c7d8eeb471"
+    }
+  ]
+}

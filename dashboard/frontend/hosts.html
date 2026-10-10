@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PSC SOC - Host Registry</title>
+<style>
+:root{--bg:#08111f;--panel:#111a2a;--line:#26334a;--text:#e8eef7;--muted:#92a1b8}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Arial,sans-serif}
+header{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;background:#0c1524}
+nav{display:flex;gap:8px}nav a{color:#d5ddeb;text-decoration:none;border:1px solid var(--line);padding:8px 11px;border-radius:7px}
+main{padding:20px;max-width:1400px;margin:auto}.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:16px}
+.title{padding:14px 16px;border-bottom:1px solid var(--line);font-weight:700}.form{display:grid;grid-template-columns:1.1fr 1fr 1fr 1.2fr 2fr auto;gap:10px;padding:16px}
+input,select,button{background:#0d1727;color:var(--text);border:1px solid #33435d;border-radius:7px;padding:10px}button{cursor:pointer}.primary{background:#087eb5}.danger{background:#8d2727}
+table{width:100%;border-collapse:collapse}th,td{padding:10px;border-bottom:1px solid #202d42;text-align:left;font-size:13px}th{background:#0d1727;color:#9dacbf}
+.help{padding:0 16px 16px;color:var(--muted);font-size:13px}.on{color:#6ee7ad}.off{color:#ff9d9d}
+</style>
+</head>
+<body>
+<header><b>Monitoring Host Registry</b><nav><a href="/">메인</a><a href="/rsyslog.html">Rsyslog Correlation</a></nav></header>
+<main>
+<section class="panel"><div class="title">신규 관제 대상 등록</div>
+<div class="form">
+<input id="name" placeholder="호스트명 예: MGT01">
+<input id="ip" placeholder="호스트 IP 예: 203.230.44.163">
+<select id="os_type"><option value="">OS 선택</option><option>Rocky Linux</option><option>Ubuntu</option><option>Windows</option><option>Network Device</option><option>Other</option></select>
+<input id="role" placeholder="역할 예: DB / WAS / DNS">
+<input id="note" placeholder="비고">
+<button class="primary" onclick="addHost()">등록</button>
+</div>
+<div class="help">등록 IP = rsyslog를 203.230.52.214로 보내는 실제 관제 대상 호스트 IP. 공격자 IP(src_ip)와 별도입니다.</div>
+</section>
+<section class="panel"><div class="title">등록 호스트</div><div style="overflow:auto">
+<table><thead><tr><th>상태</th><th>HOST</th><th>IP</th><th>OS</th><th>ROLE</th><th>EVENTS</th><th>LAST SEEN</th><th>비고</th><th>관리</th></tr></thead><tbody id="rows"></tbody></table>
+</div></section>
+</main>
+<script>
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+async function load(){
+ const j=await (await fetch('/api/hosts')).json();
+ rows.innerHTML=(j.hosts||[]).map(h=>`<tr>
+ <td class="${h.enabled?'on':'off'}">${h.enabled?'ENABLED':'DISABLED'}</td><td><b>${esc(h.name)}</b></td><td>${esc(h.ip)}</td>
+ <td>${esc(h.os_type)}</td><td>${esc(h.role)}</td><td>${h.event_count}</td><td>${esc(h.last_seen||'-')}</td><td>${esc(h.note)}</td>
+ <td><button onclick="toggleHost(${h.id},${h.enabled?'false':'true'})">${h.enabled?'중지':'활성'}</button>
+ <button class="danger" onclick="removeHost(${h.id})">삭제</button></td></tr>`).join('');
+}
+async function addHost(){
+ const p={name:name.value.trim(),ip:ip.value.trim(),os_type:os_type.value,role:role.value.trim(),note:note.value.trim()};
+ const r=await fetch('/api/hosts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});
+ const j=await r.json(); if(!r.ok){alert(j.error||'등록 실패');return;} location.reload();
+}
+async function toggleHost(id,enabled){await fetch('/api/hosts/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled})});load();}
+async function removeHost(id){if(!confirm('삭제할까요?'))return;await fetch('/api/hosts/'+id,{method:'DELETE'});load();}
+load();setInterval(load,10000);
+</script></body></html>

@@ -1,0 +1,53 @@
+name: SIEM validation
+on:
+  push:
+    branches: [main, develop, 'feature/**']
+  pull_request:
+    branches: [main, develop]
+permissions:
+  contents: read
+jobs:
+  merge-policy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require develop as the source of main pull requests
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_BRANCH: ${{ github.base_ref }}
+          HEAD_BRANCH: ${{ github.head_ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          CURRENT_REPO: ${{ github.repository }}
+        run: |
+          python - <<'PY'
+          import os
+          if os.environ['EVENT_NAME'] == 'pull_request' and os.environ['BASE_BRANCH'] == 'main':
+              assert os.environ['HEAD_BRANCH'] == 'develop', 'Only develop may be merged into main'
+              assert os.environ['HEAD_REPO'] == os.environ['CURRENT_REPO'], 'Use this repository develop branch'
+          if os.environ['EVENT_NAME'] == 'pull_request' and os.environ['BASE_BRANCH'] == 'develop':
+              assert os.environ['HEAD_BRANCH'].startswith('feature/'), 'Use a feature branch for develop pull requests'
+          PY
+  siem-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+      - run: python -m pip install -r backend/requirements.txt
+      - run: python -m compileall -q backend dashboard/backend/app
+      - run: python -m unittest discover -s tests -v
+  dashboard-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dashboard/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '11.25.0'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build

@@ -1,0 +1,16 @@
+[Unit]
+Description=PSC SIEM src/dst message parser
+After=soc-siem.service
+Wants=soc-siem.service
+
+[Service]
+Type=simple
+User=socsiem
+Group=socsiem
+Environment=SOC_DB_PATH=/opt/soc/backend/siem.db
+ExecStart=/opt/soc/venv/bin/python /opt/soc/backend/soc_event_enricher.py
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

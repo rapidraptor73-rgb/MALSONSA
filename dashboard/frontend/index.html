@@ -1,0 +1,3414 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>PSC Purple SOC</title>
+
+
+    <style>
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            background: #0b1120;
+            color: #e5e7eb;
+        }
+
+        button,
+        input,
+        select,
+        textarea {
+            font-family: inherit;
+        }
+
+        a {
+            text-decoration: none;
+        }
+
+        /* ==================================================
+           LAYOUT
+        ================================================== */
+
+        .container {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        .sidebar {
+            position: fixed;
+            top: 0;
+            bottom: 0;
+            left: 0;
+
+            width: 250px;
+
+            background: #111827;
+            border-right: 1px solid #1f2937;
+
+            padding: 24px 18px;
+
+            overflow-y: auto;
+
+            z-index: 100;
+        }
+
+        .main {
+            width: calc(100% - 250px);
+
+            margin-left: 250px;
+
+            padding: 28px;
+        }
+
+        /* ==================================================
+           SIDEBAR
+        ================================================== */
+
+        .logo {
+            color: #38bdf8;
+
+            font-size: 23px;
+            font-weight: bold;
+
+            margin-bottom: 5px;
+        }
+
+        .logo-sub {
+            color: #64748b;
+
+            font-size: 11px;
+
+            margin-bottom: 30px;
+        }
+
+        .menu-title {
+            color: #64748b;
+
+            font-size: 10px;
+            letter-spacing: 1px;
+
+            margin-top: 24px;
+            margin-bottom: 9px;
+        }
+
+        .menu-item {
+            display: block;
+
+            width: 100%;
+
+            color: #cbd5e1;
+
+            padding: 11px 13px;
+
+            margin-bottom: 5px;
+
+            border-radius: 7px;
+
+            cursor: pointer;
+
+            transition: 0.2s;
+        }
+
+        .menu-item:hover {
+            color: white;
+            background: #1e293b;
+        }
+
+        .menu-item.active {
+            color: #38bdf8;
+            background: #0f3d5e;
+        }
+
+        /* ==================================================
+           HEADER
+        ================================================== */
+
+        .header {
+            display: flex;
+
+            justify-content: space-between;
+            align-items: center;
+
+            margin-bottom: 28px;
+        }
+
+        .header h1 {
+            font-size: 27px;
+        }
+
+        .header p {
+            margin-top: 5px;
+
+            color: #94a3b8;
+
+            font-size: 13px;
+        }
+
+        .system-status {
+            display: flex;
+
+            align-items: center;
+
+            gap: 8px;
+
+            padding: 9px 14px;
+
+            background: #13261e;
+
+            border: 1px solid #166534;
+
+            border-radius: 20px;
+
+            color: #86efac;
+
+            font-size: 12px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+
+            border-radius: 50%;
+
+            background: #22c55e;
+        }
+
+        /* ==================================================
+           COMMON
+        ================================================== */
+
+        .section-title {
+            margin-bottom: 14px;
+
+            font-size: 16px;
+        }
+
+        .card {
+            background: #111827;
+
+            border: 1px solid #1f2937;
+
+            border-radius: 11px;
+
+            padding: 20px;
+        }
+
+        .card-title {
+            color: #94a3b8;
+
+            font-size: 12px;
+
+            margin-bottom: 11px;
+        }
+
+        .btn {
+            padding: 9px 13px;
+
+            border: 1px solid #334155;
+
+            border-radius: 7px;
+
+            background: #1e293b;
+
+            color: #e5e7eb;
+
+            cursor: pointer;
+
+            transition: 0.2s;
+        }
+
+        .btn:hover {
+            border-color: #38bdf8;
+            color: #38bdf8;
+        }
+
+        .btn-primary {
+            background: #0369a1;
+            border-color: #0284c7;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #0284c7;
+            color: white;
+        }
+
+        .btn-danger {
+            background: #7f1d1d;
+            border-color: #991b1b;
+            color: white;
+        }
+
+        .btn-small {
+            padding: 6px 9px;
+            font-size: 11px;
+        }
+
+        /* ==================================================
+           SIEM TABS
+        ================================================== */
+
+        .siem-tabs {
+            display: grid;
+
+            grid-template-columns:
+                repeat(auto-fit, minmax(175px, 1fr));
+
+            gap: 11px;
+
+            margin-bottom: 27px;
+        }
+
+        .siem-item {
+            display: flex;
+
+            align-items: stretch;
+
+            background: #111827;
+
+            border: 1px solid #1f2937;
+
+            border-radius: 9px;
+
+            overflow: hidden;
+
+            transition: 0.2s;
+        }
+
+        .siem-item:hover {
+            transform: translateY(-2px);
+            border-color: #38bdf8;
+        }
+
+        .siem-item.configured {
+            border-color: #2563eb;
+        }
+
+        .siem-tab {
+            flex: 1;
+
+            padding: 16px;
+
+            border: none;
+
+            background: transparent;
+
+            color: #cbd5e1;
+
+            font-weight: bold;
+
+            cursor: pointer;
+        }
+
+        .siem-tab:hover {
+            color: #38bdf8;
+        }
+
+        .gear-button {
+            width: 45px;
+
+            border: none;
+            border-left: 1px solid #1f2937;
+
+            background: #172033;
+
+            color: #94a3b8;
+
+            cursor: pointer;
+
+            font-size: 17px;
+        }
+
+        .gear-button:hover {
+            color: #38bdf8;
+            background: #1e293b;
+        }
+
+        /* ==================================================
+           RSYSLOG QUICK CARD
+        ================================================== */
+
+        .rsyslog-card {
+            display: flex;
+
+            justify-content: space-between;
+            align-items: center;
+
+            gap: 20px;
+
+            margin-bottom: 25px;
+
+            border-color: #164e63;
+        }
+
+        .rsyslog-title {
+            font-weight: bold;
+            color: #67e8f9;
+            margin-bottom: 5px;
+        }
+
+        .rsyslog-description {
+            color: #94a3b8;
+
+            font-size: 12px;
+
+            line-height: 1.6;
+        }
+
+        /* ==================================================
+           KPI
+        ================================================== */
+
+        .kpi-grid {
+            display: grid;
+
+            grid-template-columns:
+                repeat(auto-fit, minmax(190px, 1fr));
+
+            gap: 16px;
+
+            margin-bottom: 25px;
+        }
+
+        .kpi-value {
+            font-size: 29px;
+            font-weight: bold;
+        }
+
+        .blue {
+            color: #38bdf8;
+        }
+
+        .red {
+            color: #f87171;
+        }
+
+        .yellow {
+            color: #facc15;
+        }
+
+        .green {
+            color: #4ade80;
+        }
+
+        /* ==================================================
+           TARGETS
+        ================================================== */
+
+        .targets-card {
+            padding: 0;
+
+            overflow: hidden;
+
+            margin-bottom: 25px;
+        }
+
+        .targets-header {
+            display: flex;
+
+            justify-content: space-between;
+            align-items: center;
+
+            padding: 17px 20px;
+
+            border-bottom: 1px solid #1f2937;
+        }
+
+        .targets-title {
+            font-weight: bold;
+        }
+
+        .targets-subtitle {
+            color: #64748b;
+
+            margin-top: 4px;
+
+            font-size: 11px;
+        }
+
+        .table-wrapper {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+
+            border-collapse: collapse;
+        }
+
+        th {
+            text-align: left;
+
+            padding: 12px 14px;
+
+            color: #64748b;
+
+            background: #0f172a;
+
+            font-size: 11px;
+
+            border-bottom: 1px solid #1f2937;
+        }
+
+        td {
+            padding: 13px 14px;
+
+            border-bottom: 1px solid #1f2937;
+
+            font-size: 12px;
+        }
+
+        tbody tr:hover {
+            background: #172033;
+        }
+
+        .target-address {
+            color: #38bdf8;
+            font-family: monospace;
+        }
+
+        .tag {
+            display: inline-block;
+
+            padding: 4px 8px;
+
+            border-radius: 15px;
+
+            background: #1e293b;
+
+            color: #cbd5e1;
+
+            font-size: 10px;
+        }
+
+        .tag-local {
+            background: #164e63;
+            color: #67e8f9;
+        }
+
+        .tag-enabled {
+            background: #14532d;
+            color: #86efac;
+        }
+
+        .tag-disabled {
+            background: #3f3f46;
+            color: #a1a1aa;
+        }
+
+        .target-actions {
+            display: flex;
+
+            gap: 6px;
+        }
+
+        /* ==================================================
+           DASHBOARD GRID
+        ================================================== */
+
+        .dashboard-grid {
+            display: grid;
+
+            grid-template-columns: 1fr 1fr;
+
+            gap: 17px;
+        }
+
+        .service-row {
+            display: flex;
+
+            justify-content: space-between;
+
+            padding: 11px 0;
+
+            border-bottom: 1px solid #1f2937;
+        }
+
+        .service-row:last-child {
+            border-bottom: 0;
+        }
+
+        /* ==================================================
+           MODAL
+        ================================================== */
+
+        .modal-overlay {
+            position: fixed;
+
+            inset: 0;
+
+            display: none;
+
+            justify-content: center;
+            align-items: center;
+
+            padding: 20px;
+
+            background: rgba(0,0,0,0.72);
+
+            z-index: 9999;
+        }
+
+        .modal-overlay.show {
+            display: flex;
+        }
+
+        .modal {
+            width: 520px;
+            max-width: 100%;
+
+            max-height: 90vh;
+
+            overflow-y: auto;
+
+            background: #111827;
+
+            border: 1px solid #334155;
+
+            border-radius: 12px;
+
+            padding: 23px;
+        }
+
+        .modal-header {
+            display: flex;
+
+            justify-content: space-between;
+            align-items: center;
+
+            margin-bottom: 20px;
+        }
+
+        .modal-header h2 {
+            font-size: 19px;
+        }
+
+        .modal-close {
+            border: 0;
+
+            background: transparent;
+
+            color: #94a3b8;
+
+            font-size: 24px;
+
+            cursor: pointer;
+        }
+
+        .form-grid {
+            display: grid;
+
+            grid-template-columns: 1fr 1fr;
+
+            gap: 14px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group.full {
+            grid-column: 1 / -1;
+        }
+
+        .form-group label {
+            display: block;
+
+            color: #94a3b8;
+
+            margin-bottom: 6px;
+
+            font-size: 11px;
+        }
+
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+
+            padding: 10px;
+
+            color: white;
+
+            background: #0f172a;
+
+            border: 1px solid #334155;
+
+            border-radius: 7px;
+
+            outline: none;
+        }
+
+        .form-group textarea {
+            resize: vertical;
+
+            min-height: 75px;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            border-color: #38bdf8;
+        }
+
+        .input-help {
+            margin-top: 5px;
+
+            color: #64748b;
+
+            font-size: 10px;
+
+            line-height: 1.5;
+        }
+
+        .modal-actions {
+            display: flex;
+
+            justify-content: flex-end;
+
+            gap: 8px;
+
+            margin-top: 15px;
+        }
+
+        /* ==================================================
+           IFRAME VIEWER
+        ================================================== */
+
+        #serviceViewer {
+            display: none;
+        }
+
+        .viewer {
+            background: #111827;
+
+            border: 1px solid #1f2937;
+
+            border-radius: 10px;
+
+            overflow: hidden;
+        }
+
+        .viewer-header {
+            display: flex;
+
+            justify-content: space-between;
+            align-items: center;
+
+            gap: 15px;
+
+            padding: 13px 16px;
+
+            border-bottom: 1px solid #1f2937;
+        }
+
+        .viewer-title {
+            font-weight: bold;
+        }
+
+        .viewer-url {
+            color: #64748b;
+
+            margin-top: 4px;
+
+            font-size: 10px;
+        }
+
+        .viewer-buttons {
+            display: flex;
+
+            gap: 6px;
+        }
+
+        #siemFrame {
+            width: 100%;
+            height: calc(100vh - 210px);
+
+            min-height: 620px;
+
+            border: 0;
+
+            background: white;
+        }
+
+        /* ==================================================
+           TOAST
+        ================================================== */
+
+        #toast {
+            position: fixed;
+
+            right: 25px;
+            bottom: 25px;
+
+            padding: 12px 16px;
+
+            border: 1px solid #334155;
+
+            border-radius: 7px;
+
+            color: white;
+
+            background: #1e293b;
+
+            opacity: 0;
+
+            transform: translateY(20px);
+
+            pointer-events: none;
+
+            transition: 0.25s;
+
+            z-index: 10000;
+        }
+
+        #toast.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        @media(max-width: 950px) {
+
+            .sidebar {
+                width: 200px;
+            }
+
+            .main {
+                margin-left: 200px;
+                width: calc(100% - 200px);
+            }
+
+            .dashboard-grid {
+                grid-template-columns: 1fr;
+            }
+
+        }
+
+        @media(max-width: 700px) {
+
+            .sidebar {
+                display: none;
+            }
+
+            .main {
+                margin-left: 0;
+                width: 100%;
+                padding: 15px;
+            }
+
+            .form-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .rsyslog-card {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+        }
+
+    </style>
+
+</head>
+
+
+<body>
+
+
+<div class="container">
+
+
+    <!-- ==================================================
+         SIDEBAR
+    ================================================== -->
+
+    <aside class="sidebar">
+
+
+        <div class="logo">
+            PURPLE SOC
+        </div>
+
+
+        <div class="logo-sub">
+            PSC Integrated Security Monitoring
+        </div>
+
+
+        <div class="menu-title">
+            SOC
+        </div>
+
+
+        <a
+            class="menu-item active"
+            onclick="showDashboard()"
+        >
+            Dashboard
+        </a>
+
+
+        <a
+            class="menu-item"
+            href="/rsyslog.html"
+        >
+            Rsyslog Correlation
+        </a>
+
+
+        <a
+            class="menu-item"
+            onclick="scrollToTargets()"
+        >
+            Monitoring Targets
+        </a>
+
+
+        <div class="menu-title">
+            SIEM SYSTEM
+        </div>
+
+
+        <a
+            class="menu-item"
+            onclick="openService('wazuh')"
+        >
+            Wazuh
+        </a>
+
+
+        <a
+            class="menu-item"
+            onclick="openService('elk')"
+        >
+            ELK Stack
+        </a>
+
+
+        <a
+            class="menu-item"
+            onclick="openService('splunk')"
+        >
+            Splunk
+        </a>
+
+
+        <a
+            class="menu-item"
+            onclick="openService('zabbix')"
+        >
+            Zabbix
+        </a>
+
+
+        <a
+            class="menu-item"
+            onclick="openService('prometheus')"
+        >
+            Prometheus
+        </a>
+
+
+        <div class="menu-title">
+            IDS / IPS
+        </div>
+
+
+        <a
+            class="menu-item"
+            onclick="openService('snort')"
+        >
+            Snort
+        </a>
+
+
+        <a
+            class="menu-item"
+            onclick="openService('suricata')"
+        >
+            Suricata
+        </a>
+
+
+        <a
+            class="menu-item"
+            onclick="openService('pfsense')"
+        >
+            pfSense
+        </a>
+
+
+    </aside>
+
+
+
+    <!-- ==================================================
+         MAIN
+    ================================================== -->
+
+    <main class="main">
+
+
+        <div class="header">
+
+
+            <div>
+
+                <h1>
+                    Security Dashboard
+                </h1>
+
+                <p>
+                    soc.psc.co.kr · Purple Team Integrated SOC
+                </p>
+
+            </div>
+
+
+            <div class="system-status">
+
+                <div class="status-dot"></div>
+
+                SOC ONLINE
+
+            </div>
+
+
+        </div>
+
+
+
+        <!-- ==================================================
+             QUICK SIEM
+        ================================================== -->
+
+        <div id="overviewSection">
+
+
+            <h2 class="section-title">
+                SIEM / Monitoring Console
+            </h2>
+
+
+            <div class="siem-tabs">
+
+
+                <div
+                    class="siem-item"
+                    id="item-wazuh"
+                >
+
+                    <button
+                        class="siem-tab"
+                        onclick="openService('wazuh')"
+                    >
+                        Wazuh
+                    </button>
+
+                    <button
+                        class="gear-button"
+                        onclick="openServiceSettings('wazuh')"
+                    >
+                        ⚙
+                    </button>
+
+                </div>
+
+
+                <div
+                    class="siem-item"
+                    id="item-elk"
+                >
+
+                    <button
+                        class="siem-tab"
+                        onclick="openService('elk')"
+                    >
+                        ELK
+                    </button>
+
+                    <button
+                        class="gear-button"
+                        onclick="openServiceSettings('elk')"
+                    >
+                        ⚙
+                    </button>
+
+                </div>
+
+
+                <div
+                    class="siem-item"
+                    id="item-splunk"
+                >
+
+                    <button
+                        class="siem-tab"
+                        onclick="openService('splunk')"
+                    >
+                        Splunk
+                    </button>
+
+                    <button
+                        class="gear-button"
+                        onclick="openServiceSettings('splunk')"
+                    >
+                        ⚙
+                    </button>
+
+                </div>
+
+
+                <div
+                    class="siem-item"
+                    id="item-zabbix"
+                >
+
+                    <button
+                        class="siem-tab"
+                        onclick="openService('zabbix')"
+                    >
+                        Zabbix
+                    </button>
+
+                    <button
+                        class="gear-button"
+                        onclick="openServiceSettings('zabbix')"
+                    >
+                        ⚙
+                    </button>
+
+                </div>
+
+
+                <div
+                    class="siem-item"
+                    id="item-prometheus"
+                >
+
+                    <button
+                        class="siem-tab"
+                        onclick="openService('prometheus')"
+                    >
+                        Prometheus
+                    </button>
+
+                    <button
+                        class="gear-button"
+                        onclick="openServiceSettings('prometheus')"
+                    >
+                        ⚙
+                    </button>
+
+                </div>
+
+
+                <div
+                    class="siem-item"
+                    id="item-snort"
+                >
+
+                    <button
+                        class="siem-tab"
+                        onclick="openService('snort')"
+                    >
+                        Snort
+                    </button>
+
+                    <button
+                        class="gear-button"
+                        onclick="openServiceSettings('snort')"
+                    >
+                        ⚙
+                    </button>
+
+                </div>
+
+
+                <div
+                    class="siem-item"
+                    id="item-suricata"
+                >
+
+                    <button
+                        class="siem-tab"
+                        onclick="openService('suricata')"
+                    >
+                        Suricata
+                    </button>
+
+                    <button
+                        class="gear-button"
+                        onclick="openServiceSettings('suricata')"
+                    >
+                        ⚙
+                    </button>
+
+                </div>
+
+
+                <div
+                    class="siem-item"
+                    id="item-pfsense"
+                >
+
+                    <button
+                        class="siem-tab"
+                        onclick="openService('pfsense')"
+                    >
+                        pfSense
+                    </button>
+
+                    <button
+                        class="gear-button"
+                        onclick="openServiceSettings('pfsense')"
+                    >
+                        ⚙
+                    </button>
+
+                </div>
+
+
+            </div>
+
+
+
+            <!-- ==================================================
+                 RSYSLOG MVP
+            ================================================== -->
+
+            <div class="card rsyslog-card">
+
+
+                <div>
+
+                    <div class="rsyslog-title">
+                        Rsyslog Correlation MVP
+                    </div>
+
+                    <div class="rsyslog-description">
+
+                        203.230.52.214 로컬 rsyslog 분석
+
+                        <br>
+
+                        Anchor Hold · Correlation Score ·
+                        Inverted Index 기반 색인 탐색
+
+                    </div>
+
+                </div>
+
+
+                <a href="/rsyslog.html">
+
+                    <button class="btn btn-primary">
+
+                        Rsyslog 분석 화면 열기 →
+
+                    </button>
+
+                </a>
+
+
+            </div>
+
+
+
+            <!-- ==================================================
+                 KPI
+            ================================================== -->
+
+            <div class="kpi-grid">
+
+
+                <div class="card">
+
+                    <div class="card-title">
+                        Total Events
+                    </div>
+
+                    <div class="kpi-value blue">
+                        -
+                    </div>
+
+                </div>
+
+
+                <div class="card">
+
+                    <div class="card-title">
+                        Security Alerts
+                    </div>
+
+                    <div class="kpi-value red">
+                        -
+                    </div>
+
+                </div>
+
+
+                <div class="card">
+
+                    <div class="card-title">
+                        Anchor Hold
+                    </div>
+
+                    <div class="kpi-value yellow">
+                        -
+                    </div>
+
+                </div>
+
+
+                <div class="card">
+
+                    <div class="card-title">
+                        Registered Targets
+                    </div>
+
+                    <div
+                        class="kpi-value green"
+                        id="targetCount"
+                    >
+                        0
+                    </div>
+
+                </div>
+
+
+            </div>
+
+
+
+            <!-- ==================================================
+                 MONITORING TARGETS
+            ================================================== -->
+
+            <div
+                class="card targets-card"
+                id="monitoringTargets"
+            >
+
+
+                <div class="targets-header">
+
+
+                    <div>
+
+                        <div class="targets-title">
+
+                            Monitoring Targets
+
+                        </div>
+
+                        <div class="targets-subtitle">
+
+                            관제할 서버 / 네트워크 장비를
+                            IP 또는 도메인으로 등록
+
+                        </div>
+
+                    </div>
+
+
+                    <button
+                        class="btn btn-primary"
+                        onclick="openTargetModal()"
+                    >
+
+                        + 관제 대상 추가
+
+                    </button>
+
+
+                </div>
+
+
+                <div class="table-wrapper">
+
+
+                    <table>
+
+
+                        <thead>
+
+                        <tr>
+
+                            <th>
+                                이름
+                            </th>
+
+                            <th>
+                                IP / DOMAIN
+                            </th>
+
+                            <th>
+                                장비 유형
+                            </th>
+
+                            <th>
+                                로그 소스
+                            </th>
+
+                            <th>
+                                프로토콜
+                            </th>
+
+                            <th>
+                                PORT
+                            </th>
+
+                            <th>
+                                상태
+                            </th>
+
+                            <th>
+                                관리
+                            </th>
+
+                        </tr>
+
+                        </thead>
+
+
+                        <tbody id="targetTable">
+
+                        </tbody>
+
+
+                    </table>
+
+
+                </div>
+
+
+            </div>
+
+
+
+            <!-- ==================================================
+                 SERVICE SUMMARY
+            ================================================== -->
+
+            <div class="dashboard-grid">
+
+
+                <div class="card">
+
+                    <div class="card-title">
+                        Current SOC MVP
+                    </div>
+
+
+                    <div class="service-row">
+
+                        <span>
+                            Local Rsyslog
+                        </span>
+
+                        <span class="tag tag-enabled">
+                            ACTIVE
+                        </span>
+
+                    </div>
+
+
+                    <div class="service-row">
+
+                        <span>
+                            Correlation Engine
+                        </span>
+
+                        <span class="tag tag-enabled">
+                            MVP
+                        </span>
+
+                    </div>
+
+
+                    <div class="service-row">
+
+                        <span>
+                            Anchor / Hold
+                        </span>
+
+                        <span class="tag tag-enabled">
+                            MVP
+                        </span>
+
+                    </div>
+
+
+                    <div class="service-row">
+
+                        <span>
+                            Inverted Index
+                        </span>
+
+                        <span class="tag tag-enabled">
+                            MVP
+                        </span>
+
+                    </div>
+
+
+                </div>
+
+
+                <div class="card">
+
+                    <div class="card-title">
+                        Node Information
+                    </div>
+
+
+                    <div class="service-row">
+
+                        <span>
+                            SOC Node
+                        </span>
+
+                        <span>
+                            203.230.52.214
+                        </span>
+
+                    </div>
+
+
+                    <div class="service-row">
+
+                        <span>
+                            Domain
+                        </span>
+
+                        <span>
+                            soc.psc.co.kr
+                        </span>
+
+                    </div>
+
+
+                    <div class="service-row">
+
+                        <span>
+                            Log Source
+                        </span>
+
+                        <span>
+                            rsyslog
+                        </span>
+
+                    </div>
+
+
+                </div>
+
+
+            </div>
+
+
+        </div>
+
+
+
+        <!-- ==================================================
+             SIEM IFRAME VIEWER
+        ================================================== -->
+
+        <div id="serviceViewer">
+
+
+            <div class="viewer">
+
+
+                <div class="viewer-header">
+
+
+                    <div>
+
+                        <div
+                            class="viewer-title"
+                            id="viewerTitle"
+                        >
+                        </div>
+
+                        <div
+                            class="viewer-url"
+                            id="viewerUrl"
+                        >
+                        </div>
+
+                    </div>
+
+
+                    <div class="viewer-buttons">
+
+
+                        <button
+                            class="btn btn-small"
+                            onclick="showDashboard()"
+                        >
+                            ← Dashboard
+                        </button>
+
+
+                        <button
+                            class="btn btn-small"
+                            onclick="reloadFrame()"
+                        >
+                            ↻
+                        </button>
+
+
+                        <button
+                            class="btn btn-small"
+                            onclick="openCurrentSameTab()"
+                        >
+                            현재 탭으로 열기
+                        </button>
+
+
+                    </div>
+
+
+                </div>
+
+
+                <iframe
+                    id="siemFrame"
+                    title="SIEM Dashboard"
+                >
+                </iframe>
+
+
+            </div>
+
+
+        </div>
+
+
+    </main>
+
+
+</div>
+
+
+
+<!-- ==================================================
+     TARGET MODAL
+================================================== -->
+
+<div
+    class="modal-overlay"
+    id="targetModal"
+>
+
+
+    <div class="modal">
+
+
+        <div class="modal-header">
+
+
+            <h2 id="targetModalTitle">
+                관제 대상 추가
+            </h2>
+
+
+            <button
+                class="modal-close"
+                onclick="closeTargetModal()"
+            >
+                ×
+            </button>
+
+
+        </div>
+
+
+        <div class="form-grid">
+
+
+            <div class="form-group">
+
+                <label>
+                    장비 이름
+                </label>
+
+                <input
+                    type="text"
+                    id="targetName"
+                    placeholder="예: Rocky-Web-01"
+                >
+
+            </div>
+
+
+            <div class="form-group">
+
+                <label>
+                    IP / Domain
+                </label>
+
+                <input
+                    type="text"
+                    id="targetAddress"
+                    placeholder="172.16.16.150 또는 server.psc.co.kr"
+                >
+
+                <div class="input-help">
+
+                    http:// 또는 https://는 입력하지 않습니다.
+
+                </div>
+
+            </div>
+
+
+            <div class="form-group">
+
+                <label>
+                    장비 유형
+                </label>
+
+                <select id="targetType">
+
+                    <option value="Linux Server">
+                        Linux Server
+                    </option>
+
+                    <option value="Windows Server">
+                        Windows Server
+                    </option>
+
+                    <option value="Network Device">
+                        Network Device
+                    </option>
+
+                    <option value="Firewall">
+                        Firewall
+                    </option>
+
+                    <option value="IDS/IPS">
+                        IDS / IPS
+                    </option>
+
+                    <option value="SIEM">
+                        SIEM
+                    </option>
+
+                    <option value="Other">
+                        Other
+                    </option>
+
+                </select>
+
+            </div>
+
+
+            <div class="form-group">
+
+                <label>
+                    로그 소스
+                </label>
+
+                <select id="targetLogSource">
+
+                    <option value="rsyslog">
+                        rsyslog
+                    </option>
+
+                    <option value="syslog">
+                        syslog
+                    </option>
+
+                    <option value="Windows Event">
+                        Windows Event
+                    </option>
+
+                    <option value="Wazuh">
+                        Wazuh
+                    </option>
+
+                    <option value="Suricata">
+                        Suricata
+                    </option>
+
+                    <option value="Snort">
+                        Snort
+                    </option>
+
+                    <option value="Other">
+                        Other
+                    </option>
+
+                </select>
+
+            </div>
+
+
+            <div class="form-group">
+
+                <label>
+                    전송 방식
+                </label>
+
+                <select
+                    id="targetProtocol"
+                    onchange="applyDefaultPort()"
+                >
+
+                    <option value="LOCAL">
+                        LOCAL
+                    </option>
+
+                    <option value="UDP">
+                        Syslog UDP
+                    </option>
+
+                    <option value="TCP">
+                        Syslog TCP
+                    </option>
+
+                    <option value="RELP">
+                        RELP
+                    </option>
+
+                    <option value="AGENT">
+                        Agent
+                    </option>
+
+                </select>
+
+            </div>
+
+
+            <div class="form-group">
+
+                <label>
+                    Port
+                </label>
+
+                <input
+                    type="number"
+                    id="targetPort"
+                    min="1"
+                    max="65535"
+                    placeholder="514"
+                >
+
+            </div>
+
+
+            <div class="form-group">
+
+                <label>
+                    사용 여부
+                </label>
+
+                <select id="targetEnabled">
+
+                    <option value="true">
+                        Enabled
+                    </option>
+
+                    <option value="false">
+                        Disabled
+                    </option>
+
+                </select>
+
+            </div>
+
+
+            <div class="form-group full">
+
+                <label>
+                    메모
+                </label>
+
+                <textarea
+                    id="targetMemo"
+                    placeholder="예: DNS + 통합 대시보드 서버"
+                ></textarea>
+
+            </div>
+
+
+        </div>
+
+
+        <div class="modal-actions">
+
+
+            <button
+                class="btn"
+                onclick="closeTargetModal()"
+            >
+                취소
+            </button>
+
+
+            <button
+                class="btn btn-primary"
+                onclick="saveTarget()"
+            >
+                저장
+            </button>
+
+
+        </div>
+
+
+    </div>
+
+
+</div>
+
+
+
+<!-- ==================================================
+     SIEM SERVICE SETTINGS
+================================================== -->
+
+<div
+    class="modal-overlay"
+    id="serviceModal"
+>
+
+
+    <div class="modal">
+
+
+        <div class="modal-header">
+
+
+            <h2 id="serviceModalTitle">
+                SIEM 설정
+            </h2>
+
+
+            <button
+                class="modal-close"
+                onclick="closeServiceSettings()"
+            >
+                ×
+            </button>
+
+
+        </div>
+
+
+        <div class="form-group">
+
+            <label>
+                HTTPS 주소
+            </label>
+
+            <input
+                type="text"
+                id="serviceUrl"
+                placeholder="172.16.16.130 또는 wazuh.psc.co.kr"
+            >
+
+            <div class="input-help">
+
+                스킴이 없으면 https://가 자동으로 추가됩니다.
+
+            </div>
+
+        </div>
+
+
+        <div class="form-group">
+
+            <label>
+                표시 방식
+            </label>
+
+            <select id="serviceMode">
+
+                <option value="iframe">
+                    Dashboard 내부 iframe
+                </option>
+
+                <option value="redirect">
+                    현재 브라우저 탭으로 이동
+                </option>
+
+            </select>
+
+        </div>
+
+
+        <div class="modal-actions">
+
+
+            <button
+                class="btn"
+                onclick="closeServiceSettings()"
+            >
+                취소
+            </button>
+
+
+            <button
+                class="btn btn-primary"
+                onclick="saveServiceSettings()"
+            >
+                저장
+            </button>
+
+
+        </div>
+
+
+    </div>
+
+
+</div>
+
+
+
+<div id="toast"></div>
+
+
+
+<script>
+
+/* =========================================================
+   SIEM SERVICES
+========================================================= */
+
+const defaultServices = {
+
+    wazuh: {
+        name: "Wazuh",
+        url: "https://172.16.16.130",
+        mode: "iframe"
+    },
+
+    elk: {
+        name: "ELK Stack",
+        url: "",
+        mode: "iframe"
+    },
+
+    splunk: {
+        name: "Splunk",
+        url: "",
+        mode: "iframe"
+    },
+
+    zabbix: {
+        name: "Zabbix",
+        url: "",
+        mode: "iframe"
+    },
+
+    prometheus: {
+        name: "Prometheus",
+        url: "",
+        mode: "iframe"
+    },
+
+    snort: {
+        name: "Snort",
+        url: "",
+        mode: "iframe"
+    },
+
+    suricata: {
+        name: "Suricata",
+        url: "",
+        mode: "iframe"
+    },
+
+    pfsense: {
+        name: "pfSense",
+        url: "",
+        mode: "iframe"
+    }
+
+};
+
+
+let activeService = null;
+let settingService = null;
+
+
+/* =========================================================
+   MONITORING TARGETS
+========================================================= */
+
+const TARGET_STORAGE_KEY =
+    "soc_monitoring_targets";
+
+
+let editingTargetId = null;
+
+
+/*
+처음 실행할 때 자기 자신을 기본 Target으로 등록
+*/
+
+function seedTargets() {
+
+    const existing =
+        localStorage.getItem(
+            TARGET_STORAGE_KEY
+        );
+
+
+    if (existing !== null) {
+
+        return;
+
+    }
+
+
+    const targets = [
+
+        {
+
+            id:
+                "local-soc-141",
+
+            name:
+                "PSC-SOC",
+
+            address:
+                "203.230.52.214",
+
+            type:
+                "Linux Server",
+
+            logSource:
+                "rsyslog",
+
+            protocol:
+                "LOCAL",
+
+            port:
+                "",
+
+            enabled:
+                true,
+
+            system:
+                true,
+
+            memo:
+                "DNS + 통합 대시보드 + Local Rsyslog MVP",
+
+            createdAt:
+                new Date().toISOString()
+
+        }
+
+    ];
+
+
+    saveTargets(
+        targets
+    );
+
+}
+
+
+/* =========================================================
+   TARGET GET
+========================================================= */
+
+function getTargets() {
+
+    try {
+
+        return JSON.parse(
+
+            localStorage.getItem(
+                TARGET_STORAGE_KEY
+            )
+
+            ||
+
+            "[]"
+
+        );
+
+    }
+
+    catch {
+
+        return [];
+
+    }
+
+}
+
+
+/* =========================================================
+   TARGET SAVE
+========================================================= */
+
+function saveTargets(targets) {
+
+    localStorage.setItem(
+
+        TARGET_STORAGE_KEY,
+
+        JSON.stringify(
+            targets
+        )
+
+    );
+
+}
+
+
+/* =========================================================
+   TARGET RENDER
+========================================================= */
+
+function renderTargets() {
+
+    const targets =
+        getTargets();
+
+
+    const table =
+        document.getElementById(
+            "targetTable"
+        );
+
+
+    table.innerHTML =
+        "";
+
+
+    document.getElementById(
+        "targetCount"
+    ).innerText =
+        targets.length;
+
+
+    for (
+        const target
+        of
+        targets
+    ) {
+
+
+        const row =
+            document.createElement(
+                "tr"
+            );
+
+
+        let status;
+
+
+        if (target.system) {
+
+            status =
+                '<span class="tag tag-local">LOCAL MVP</span>';
+
+        }
+
+        else if (target.enabled) {
+
+            status =
+                '<span class="tag tag-enabled">REGISTERED</span>';
+
+        }
+
+        else {
+
+            status =
+                '<span class="tag tag-disabled">DISABLED</span>';
+
+        }
+
+
+        let deleteButton = "";
+
+
+        if (!target.system) {
+
+            deleteButton = `
+
+                <button
+                    class="btn btn-danger btn-small"
+                    onclick="deleteTarget('${target.id}')"
+                >
+                    삭제
+                </button>
+
+            `;
+
+        }
+
+
+        row.innerHTML = `
+
+            <td>
+                ${escapeHtml(target.name)}
+            </td>
+
+            <td class="target-address">
+                ${escapeHtml(target.address)}
+            </td>
+
+            <td>
+                ${escapeHtml(target.type)}
+            </td>
+
+            <td>
+                ${escapeHtml(target.logSource)}
+            </td>
+
+            <td>
+                ${escapeHtml(target.protocol)}
+            </td>
+
+            <td>
+                ${escapeHtml(target.port || "-")}
+            </td>
+
+            <td>
+                ${status}
+            </td>
+
+            <td>
+
+                <div class="target-actions">
+
+                    <button
+                        class="btn btn-small"
+                        onclick="editTarget('${target.id}')"
+                    >
+                        수정
+                    </button>
+
+                    ${deleteButton}
+
+                </div>
+
+            </td>
+
+        `;
+
+
+        table.appendChild(
+            row
+        );
+
+    }
+
+}
+
+
+/* =========================================================
+   TARGET MODAL
+========================================================= */
+
+function openTargetModal() {
+
+    editingTargetId =
+        null;
+
+
+    document.getElementById(
+        "targetModalTitle"
+    ).innerText =
+        "관제 대상 추가";
+
+
+    clearTargetForm();
+
+
+    document.getElementById(
+        "targetProtocol"
+    ).value =
+        "UDP";
+
+
+    document.getElementById(
+        "targetPort"
+    ).value =
+        "514";
+
+
+    document.getElementById(
+        "targetModal"
+    ).classList.add(
+        "show"
+    );
+
+}
+
+
+/* =========================================================
+   TARGET EDIT
+========================================================= */
+
+function editTarget(id) {
+
+    const targets =
+        getTargets();
+
+
+    const target =
+        targets.find(
+            target =>
+                target.id === id
+        );
+
+
+    if (!target) {
+
+        return;
+
+    }
+
+
+    editingTargetId =
+        id;
+
+
+    document.getElementById(
+        "targetModalTitle"
+    ).innerText =
+        "관제 대상 수정";
+
+
+    document.getElementById(
+        "targetName"
+    ).value =
+        target.name;
+
+
+    document.getElementById(
+        "targetAddress"
+    ).value =
+        target.address;
+
+
+    document.getElementById(
+        "targetType"
+    ).value =
+        target.type;
+
+
+    document.getElementById(
+        "targetLogSource"
+    ).value =
+        target.logSource;
+
+
+    document.getElementById(
+        "targetProtocol"
+    ).value =
+        target.protocol;
+
+
+    document.getElementById(
+        "targetPort"
+    ).value =
+        target.port || "";
+
+
+    document.getElementById(
+        "targetEnabled"
+    ).value =
+        String(target.enabled);
+
+
+    document.getElementById(
+        "targetMemo"
+    ).value =
+        target.memo || "";
+
+
+    document.getElementById(
+        "targetModal"
+    ).classList.add(
+        "show"
+    );
+
+}
+
+
+/* =========================================================
+   TARGET SAVE
+========================================================= */
+
+function saveTarget() {
+
+    const name =
+        document.getElementById(
+            "targetName"
+        ).value.trim();
+
+
+    const address =
+        document.getElementById(
+            "targetAddress"
+        ).value.trim();
+
+
+    const type =
+        document.getElementById(
+            "targetType"
+        ).value;
+
+
+    const logSource =
+        document.getElementById(
+            "targetLogSource"
+        ).value;
+
+
+    const protocol =
+        document.getElementById(
+            "targetProtocol"
+        ).value;
+
+
+    const port =
+        document.getElementById(
+            "targetPort"
+        ).value.trim();
+
+
+    const enabled =
+        document.getElementById(
+            "targetEnabled"
+        ).value === "true";
+
+
+    const memo =
+        document.getElementById(
+            "targetMemo"
+        ).value.trim();
+
+
+    if (!name) {
+
+        showToast(
+            "장비 이름을 입력하세요."
+        );
+
+        return;
+
+    }
+
+
+    if (!isValidHost(address)) {
+
+        showToast(
+            "올바른 IP 또는 도메인을 입력하세요."
+        );
+
+        return;
+
+    }
+
+
+    if (
+        protocol !== "LOCAL"
+        &&
+        port
+        &&
+        (
+            Number(port) < 1
+            ||
+            Number(port) > 65535
+        )
+    ) {
+
+        showToast(
+            "Port 범위는 1~65535입니다."
+        );
+
+        return;
+
+    }
+
+
+    const targets =
+        getTargets();
+
+
+    if (editingTargetId) {
+
+
+        const index =
+            targets.findIndex(
+                target =>
+                    target.id === editingTargetId
+            );
+
+
+        if (index !== -1) {
+
+
+            targets[index] = {
+
+                ...targets[index],
+
+                name,
+                address,
+                type,
+                logSource,
+                protocol,
+                port,
+                enabled,
+                memo,
+
+                updatedAt:
+                    new Date().toISOString()
+
+            };
+
+
+        }
+
+
+    }
+
+    else {
+
+
+        targets.push({
+
+            id:
+                "target-"
+                +
+                Date.now(),
+
+            name,
+            address,
+            type,
+            logSource,
+            protocol,
+            port,
+            enabled,
+
+            system:
+                false,
+
+            memo,
+
+            createdAt:
+                new Date().toISOString()
+
+        });
+
+
+    }
+
+
+    saveTargets(
+        targets
+    );
+
+
+    renderTargets();
+
+
+    closeTargetModal();
+
+
+    showToast(
+        "관제 대상이 저장되었습니다."
+    );
+
+}
+
+
+/* =========================================================
+   TARGET DELETE
+========================================================= */
+
+function deleteTarget(id) {
+
+    let targets =
+        getTargets();
+
+
+    const target =
+        targets.find(
+            target =>
+                target.id === id
+        );
+
+
+    if (
+        !target
+        ||
+        target.system
+    ) {
+
+        return;
+
+    }
+
+
+    if (
+        !confirm(
+            `${target.name} 관제 대상을 삭제할까요?`
+        )
+    ) {
+
+        return;
+
+    }
+
+
+    targets =
+        targets.filter(
+            target =>
+                target.id !== id
+        );
+
+
+    saveTargets(
+        targets
+    );
+
+
+    renderTargets();
+
+
+    showToast(
+        "관제 대상이 삭제되었습니다."
+    );
+
+}
+
+
+/* =========================================================
+   TARGET FORM
+========================================================= */
+
+function clearTargetForm() {
+
+    document.getElementById(
+        "targetName"
+    ).value = "";
+
+
+    document.getElementById(
+        "targetAddress"
+    ).value = "";
+
+
+    document.getElementById(
+        "targetType"
+    ).value =
+        "Linux Server";
+
+
+    document.getElementById(
+        "targetLogSource"
+    ).value =
+        "rsyslog";
+
+
+    document.getElementById(
+        "targetProtocol"
+    ).value =
+        "UDP";
+
+
+    document.getElementById(
+        "targetPort"
+    ).value =
+        "514";
+
+
+    document.getElementById(
+        "targetEnabled"
+    ).value =
+        "true";
+
+
+    document.getElementById(
+        "targetMemo"
+    ).value = "";
+
+}
+
+
+/* =========================================================
+   TARGET MODAL CLOSE
+========================================================= */
+
+function closeTargetModal() {
+
+    document.getElementById(
+        "targetModal"
+    ).classList.remove(
+        "show"
+    );
+
+
+    editingTargetId =
+        null;
+
+}
+
+
+/* =========================================================
+   DEFAULT PORT
+========================================================= */
+
+function applyDefaultPort() {
+
+    const protocol =
+        document.getElementById(
+            "targetProtocol"
+        ).value;
+
+
+    const port =
+        document.getElementById(
+            "targetPort"
+        );
+
+
+    if (
+        protocol === "UDP"
+        ||
+        protocol === "TCP"
+    ) {
+
+        port.value =
+            "514";
+
+    }
+
+    else if (
+        protocol === "RELP"
+    ) {
+
+        port.value =
+            "20514";
+
+    }
+
+    else {
+
+        port.value =
+            "";
+
+    }
+
+}
+
+
+/* =========================================================
+   HOST VALIDATION
+========================================================= */
+
+function isValidHost(value) {
+
+    if (!value) {
+
+        return false;
+
+    }
+
+
+    if (
+        value.includes("://")
+        ||
+        value.includes("/")
+        ||
+        value.includes(" ")
+    ) {
+
+        return false;
+
+    }
+
+
+    const ipv4 =
+        /^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$/;
+
+
+    const hostname =
+        /^(?=.{1,253}$)(?!-)([a-zA-Z0-9-]{1,63}\.)*[a-zA-Z0-9-]{1,63}$/;
+
+
+    return (
+        ipv4.test(value)
+        ||
+        hostname.test(value)
+    );
+
+}
+
+
+/* =========================================================
+   ESCAPE HTML
+========================================================= */
+
+function escapeHtml(value) {
+
+    return String(
+        value ?? ""
+    )
+
+    .replaceAll(
+        "&",
+        "&amp;"
+    )
+
+    .replaceAll(
+        "<",
+        "&lt;"
+    )
+
+    .replaceAll(
+        ">",
+        "&gt;"
+    )
+
+    .replaceAll(
+        '"',
+        "&quot;"
+    );
+
+}
+
+
+/* =========================================================
+   SCROLL TARGET
+========================================================= */
+
+function scrollToTargets() {
+
+    showDashboard();
+
+
+    setTimeout(
+        function () {
+
+            document.getElementById(
+                "monitoringTargets"
+            ).scrollIntoView({
+
+                behavior:
+                    "smooth",
+
+                block:
+                    "start"
+
+            });
+
+        },
+        100
+    );
+
+}
+
+
+/* =========================================================
+   SERVICE URL
+========================================================= */
+
+function getServiceUrl(service) {
+
+    const stored =
+        localStorage.getItem(
+            "siem_url_" + service
+        );
+
+
+    if (stored !== null) {
+
+        return stored;
+
+    }
+
+
+    return defaultServices[
+        service
+    ].url;
+
+}
+
+
+/* =========================================================
+   SERVICE MODE
+========================================================= */
+
+function getServiceMode(service) {
+
+    return (
+
+        localStorage.getItem(
+            "siem_mode_" + service
+        )
+
+        ||
+
+        defaultServices[
+            service
+        ].mode
+
+    );
+
+}
+
+
+/* =========================================================
+   OPEN SERVICE
+========================================================= */
+
+function openService(service) {
+
+    const url =
+        getServiceUrl(
+            service
+        );
+
+
+    const mode =
+        getServiceMode(
+            service
+        );
+
+
+    if (!url) {
+
+        openServiceSettings(
+            service
+        );
+
+        return;
+
+    }
+
+
+    if (
+        mode === "redirect"
+    ) {
+
+        window.location.href =
+            url;
+
+        return;
+
+    }
+
+
+    activeService =
+        service;
+
+
+    document.getElementById(
+        "overviewSection"
+    ).style.display =
+        "none";
+
+
+    document.getElementById(
+        "serviceViewer"
+    ).style.display =
+        "block";
+
+
+    document.getElementById(
+        "viewerTitle"
+    ).innerText =
+        defaultServices[
+            service
+        ].name;
+
+
+    document.getElementById(
+        "viewerUrl"
+    ).innerText =
+        url;
+
+
+    document.getElementById(
+        "siemFrame"
+    ).src =
+        url;
+
+}
+
+
+/* =========================================================
+   DASHBOARD RETURN
+========================================================= */
+
+function showDashboard() {
+
+    activeService =
+        null;
+
+
+    document.getElementById(
+        "serviceViewer"
+    ).style.display =
+        "none";
+
+
+    document.getElementById(
+        "overviewSection"
+    ).style.display =
+        "block";
+
+
+    document.getElementById(
+        "siemFrame"
+    ).src =
+        "about:blank";
+
+}
+
+
+/* =========================================================
+   RELOAD IFRAME
+========================================================= */
+
+function reloadFrame() {
+
+    if (!activeService) {
+
+        return;
+
+    }
+
+
+    document.getElementById(
+        "siemFrame"
+    ).src =
+        getServiceUrl(
+            activeService
+        );
+
+}
+
+
+/* =========================================================
+   SAME TAB
+========================================================= */
+
+function openCurrentSameTab() {
+
+    if (!activeService) {
+
+        return;
+
+    }
+
+
+    window.location.href =
+        getServiceUrl(
+            activeService
+        );
+
+}
+
+
+/* =========================================================
+   SERVICE SETTINGS
+========================================================= */
+
+function openServiceSettings(service) {
+
+    settingService =
+        service;
+
+
+    document.getElementById(
+        "serviceModalTitle"
+    ).innerText =
+
+        defaultServices[
+            service
+        ].name
+
+        +
+
+        " 설정";
+
+
+    document.getElementById(
+        "serviceUrl"
+    ).value =
+        getServiceUrl(
+            service
+        );
+
+
+    document.getElementById(
+        "serviceMode"
+    ).value =
+        getServiceMode(
+            service
+        );
+
+
+    document.getElementById(
+        "serviceModal"
+    ).classList.add(
+        "show"
+    );
+
+}
+
+
+/* =========================================================
+   SAVE SERVICE SETTINGS
+========================================================= */
+
+function saveServiceSettings() {
+
+    if (!settingService) {
+
+        return;
+
+    }
+
+
+    let url =
+        document.getElementById(
+            "serviceUrl"
+        ).value.trim();
+
+
+    if (
+        url
+        &&
+        !url.startsWith("http://")
+        &&
+        !url.startsWith("https://")
+    ) {
+
+        url =
+            "https://"
+            +
+            url;
+
+    }
+
+
+    localStorage.setItem(
+
+        "siem_url_"
+        +
+        settingService,
+
+        url
+
+    );
+
+
+    localStorage.setItem(
+
+        "siem_mode_"
+        +
+        settingService,
+
+        document.getElementById(
+            "serviceMode"
+        ).value
+
+    );
+
+
+    updateServiceStatus();
+
+
+    closeServiceSettings();
+
+
+    showToast(
+        "SIEM 설정이 저장되었습니다."
+    );
+
+}
+
+
+/* =========================================================
+   CLOSE SERVICE SETTINGS
+========================================================= */
+
+function closeServiceSettings() {
+
+    document.getElementById(
+        "serviceModal"
+    ).classList.remove(
+        "show"
+    );
+
+
+    settingService =
+        null;
+
+}
+
+
+/* =========================================================
+   SERVICE STATUS
+========================================================= */
+
+function updateServiceStatus() {
+
+    Object.keys(
+        defaultServices
+    ).forEach(
+        function (service) {
+
+
+            const element =
+                document.getElementById(
+                    "item-" + service
+                );
+
+
+            if (!element) {
+
+                return;
+
+            }
+
+
+            if (
+                getServiceUrl(
+                    service
+                )
+            ) {
+
+                element.classList.add(
+                    "configured"
+                );
+
+            }
+
+            else {
+
+                element.classList.remove(
+                    "configured"
+                );
+
+            }
+
+
+        }
+    );
+
+}
+
+
+/* =========================================================
+   TOAST
+========================================================= */
+
+function showToast(message) {
+
+    const toast =
+        document.getElementById(
+            "toast"
+        );
+
+
+    toast.innerText =
+        message;
+
+
+    toast.classList.add(
+        "show"
+    );
+
+
+    setTimeout(
+        function () {
+
+            toast.classList.remove(
+                "show"
+            );
+
+        },
+        2200
+    );
+
+}
+
+
+/* =========================================================
+   MODAL OUTSIDE CLICK
+========================================================= */
+
+document.getElementById(
+    "targetModal"
+).addEventListener(
+    "click",
+    function (event) {
+
+        if (
+            event.target === this
+        ) {
+
+            closeTargetModal();
+
+        }
+
+    }
+);
+
+
+document.getElementById(
+    "serviceModal"
+).addEventListener(
+    "click",
+    function (event) {
+
+        if (
+            event.target === this
+        ) {
+
+            closeServiceSettings();
+
+        }
+
+    }
+);
+
+
+/* =========================================================
+   INITIALIZE
+========================================================= */
+
+seedTargets();
+
+renderTargets();
+
+updateServiceStatus();
+
+</script>
+
+
+</body>
+</html>
