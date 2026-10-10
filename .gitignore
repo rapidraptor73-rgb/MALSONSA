@@ -1,0 +1,25 @@
+# Credentials, runtime data, and local transfer files
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+*.db
+*.db-*
+*.sqlite*
+*.log
+*.bak*
+backup*/
+repair-backup*/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+node_modules/
+.pnpm-store/
+dist/
+.server-source.tar.gz
+.ssh-known-hosts
+.local-tools/
