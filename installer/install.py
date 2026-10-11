@@ -46,7 +46,7 @@ class ConfigParser(argparse.ArgumentParser):
 
 
 def parser():
-    p = ConfigParser(description='MALSONSA v1.0 automatic Linux installation')
+    p = ConfigParser(description='MALSONSA v1.1 automatic Linux installation')
     p.add_argument('--hostname', default='localhost')
     p.add_argument('--host-ip', help='IP displayed in the dashboard; defaults to hostname')
     p.add_argument('--bind', default='127.0.0.1', help='Nginx listen address')
@@ -128,7 +128,7 @@ ProtectSystem=strict
 ReadWritePaths=/var/lib/soc-siem
 '''
     backend = f'''[Unit]
-Description=MALSONSA SIEM v1.0
+Description=MALSONSA SIEM v1.1
 After=network.target rsyslog.service
 Requires=rsyslog.service
 [Service]
@@ -209,7 +209,7 @@ input(type="imudp" address="{args.syslog_bind}" port="{args.syslog_port}" rulese
         '/etc/nginx/conf.d/malsonsa.conf': nginx,
         '/etc/rsyslog.d/10-malsonsa.conf': rsyslog,
         '/etc/logrotate.d/malsonsa': rotation,
-        str(WEB/'site-config.js'): 'window.SOC_CONFIG = '+json.dumps({'hostname':args.hostname,'host_ip':args.host_ip or args.hostname,'version':'1.0','siem_urls':{}}, ensure_ascii=True)+';\n',
+        str(WEB/'site-config.js'): 'window.SOC_CONFIG = '+json.dumps({'hostname':args.hostname,'host_ip':args.host_ip or args.hostname,'version':'1.1','siem_urls':{}}, ensure_ascii=True)+';\n',
     }
 
 
@@ -355,7 +355,7 @@ def install(args):
         subprocess.run(['systemctl','try-restart','rsyslog','nginx'])
         print('Managed files restored. DB/logs are retained; backup:',backup,file=sys.stderr)
         raise
-    print(f'Installed MALSONSA v1.0: {"https" if args.tls_cert else "http"}://{args.hostname}:{args.web_port}/')
+    print(f'Installed MALSONSA v1.1: {"https" if args.tls_cert else "http"}://{args.hostname}:{args.web_port}/')
     print('Backup:',backup)
 
 
@@ -367,7 +367,7 @@ def main(argv=None):
         return
     if args.check:
         family=distro() if sys.platform=='linux' else 'unsupported (Linux required for install)'
-        print(json.dumps({'version':'1.0','package_manager':family,'existing_install':(APP/'app.py').exists(),'listeners':{'web':args.bind,'syslog':args.syslog_bind},'trusted_sources':args.allow_source,'network_required':not args.skip_os_packages or not args.wheel_dir},indent=2))
+        print(json.dumps({'version':'1.1','package_manager':family,'existing_install':(APP/'app.py').exists(),'listeners':{'web':args.bind,'syslog':args.syslog_bind},'trusted_sources':args.allow_source,'network_required':not args.skip_os_packages or not args.wheel_dir},indent=2))
         return
     install(args)
 
