@@ -107,6 +107,24 @@ class MariaDBIntegrationTests(unittest.TestCase):
         self.assertGreaterEqual(self.client.get('/api/events').json['events'][0]['detection_score'],40)
         self.assertEqual(self.client.get('/api/analysis').status_code,200)
 
+    def test_manual_refresh_normalizes_new_raw_and_wakes_analysis(self):
+        c=Connection()
+        try:
+            c.execute('INSERT INTO raw_logs(event_time,host_ip,hostname,facility,severity,program,message,raw_line) VALUES(?,?,?,?,?,?,?,?)',
+                      ('2026-10-11T00:02:00Z','192.0.2.10','agent','authpriv','warning','sshd',
+                       'failed password user=admin src=198.51.100.20','manual refresh probe'))
+            c.commit()
+        finally:c.close()
+        with patch('collection_control.flush_agent',return_value={'status':'sent','sent':0,'remaining':0}),patch('collection_control.notify_worker',return_value=True) as wake:
+            response=self.client.post('/api/collection/refresh')
+            self.assertEqual(response.status_code,200,response.json)
+            self.assertEqual(response.json['normalized'],1)
+            wake.assert_called_once()
+        self.assertEqual(len(self.client.get('/api/events').json['events']),3)
+        self.module._collection_refresh_lock.acquire()
+        try:self.assertEqual(self.client.post('/api/collection/refresh').status_code,409)
+        finally:self.module._collection_refresh_lock.release()
+
     def test_raw_recovery_memory_analysis_export_and_hold_directory_lookup(self):
         c=Connection()
         try:

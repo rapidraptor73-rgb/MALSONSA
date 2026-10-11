@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 from urllib.parse import quote
 from central_store import Connection
+from collection_control import seconds_until_cycle
 
 
 def component(value):
@@ -107,6 +108,8 @@ if __name__=='__main__':
     archive.mkdir(parents=True,exist_ok=True)
     while True:
         try:
-            if not export_batch(archive):time.sleep(2)
+            while export_batch(archive):
+                pass
+            time.sleep(seconds_until_cycle(offset=30))
         except Exception as exc:
-            print('[EXPORT] retry after '+type(exc).__name__,flush=True);time.sleep(5)
+            print('[EXPORT] retry at next cycle: '+type(exc).__name__,flush=True);time.sleep(seconds_until_cycle(offset=30))

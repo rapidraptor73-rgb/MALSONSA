@@ -1,0 +1,12 @@
+[Unit]
+Description=Send queued MALSONSA agent syslog to the central DB
+After=network-online.target rsyslog.service
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/malsonsa-agent-flush
+TimeoutStartSec=120
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/rsyslog/malsonsa-agent
+PrivateTmp=true

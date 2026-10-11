@@ -32,7 +32,7 @@ def write(path,text,mode=0o640):
 
 def files():
     managed={APP/name:ROOT/'backend'/name for name in ('app.py','detection_rules.py','central_store.py',
-        'central_schema.sql','central_worker.py','central_exporter.py','central_archive.py')}
+        'central_schema.sql','central_ingest.py','collection_control.py','central_worker.py','central_exporter.py','central_archive.py')}
     managed[Path('/etc/systemd/system/soc-central-worker.service')]=ROOT/'deploy/systemd/soc-central-worker.service'
     return managed
 

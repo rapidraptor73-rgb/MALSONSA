@@ -629,6 +629,36 @@ def risk_timestamp(value):
     except (TypeError, ValueError, OverflowError, OSError):
         return None
 
+_collection_refresh_lock = threading.Lock()
+
+
+@app.post('/api/collection/refresh')
+def api_collection_refresh():
+    if not os.environ.get('SOC_CENTRAL_CONFIG'):
+        return jsonify(ok=True, storage='local', normalized=0, agent={'status':'local'})
+    if not _collection_refresh_lock.acquire(blocking=False):
+        return jsonify(error='로그 전송 요청이 이미 진행 중입니다.'), 409
+    try:
+        from collection_control import flush_agent, notify_worker
+        from central_ingest import consume_raw
+        agent=flush_agent()
+        count=0
+        deadline=time.monotonic()+10
+        # A forwarded TCP batch can reach the rsyslog SQL queue shortly before INSERT.
+        empty_checks=0
+        while count<5000 and time.monotonic()<deadline:
+            processed=consume_raw(db, parse_rsyslog_line, min(500,5000-count))
+            count+=processed
+            if not processed:
+                if agent.get('sent',0) and empty_checks<3:
+                    empty_checks+=1; time.sleep(.3); continue
+                break
+        requested=notify_worker()
+        return jsonify(ok=True, normalized=count, agent=agent, analysis_requested=requested)
+    finally:
+        _collection_refresh_lock.release()
+
+
 @app.get("/api/health")
 def api_health():
     if os.environ.get('SOC_CENTRAL_CONFIG'):

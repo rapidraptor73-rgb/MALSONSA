@@ -1,0 +1,8 @@
+[Unit]
+Description=Flush MALSONSA agent syslog every five minutes
+[Timer]
+OnCalendar=*-*-* *:0/5:00
+AccuracySec=1s
+Unit=malsonsa-agent-flush.service
+[Install]
+WantedBy=timers.target

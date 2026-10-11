@@ -59,11 +59,23 @@ WAS 변경은 매번 사용자 승인을 받는다. `install_was.py prepare`는 
 
 운영 확인: DB의 `mariadb`, `rsyslog`, `soc-central-exporter`, `soc-central-archive`; WAS의 `soc-siem`, `soc-central-worker`, `nginx`, `rsyslog`; agent의 `rsyslog`. 미처리 원본과 `exported_revision<revision`의 분석 수로 지연을 점검한다. DB 장애 시 agent/DB 수신기의 디스크 큐와 worker 재시도로 복구하며 큐 용량/디스크 가용량을 모니터링한다.
 
-원본 정규화는 독립 연결의 스레드에서 최대 500건씩 처리하고, 분석은 최신 미분석 건과 과거 후보 갱신을 나누어 처리한다. export도 최신 결과를 먼저 내보내므로 과거 이관/큐 복구 중에도 새 로그를 분석할 수 있다. API는 1 worker/4 threads로 요청을 처리한다. MariaDB 계정은 IP 기반이며 `skip-name-resolve`로 인증 중 DNS 역조회 지연을 방지한다. 기존 hostname 기반 grant가 있으면 설치를 중단하고 확인한다.
+원본 정규화는 5분 주기와 수동 새로고침에서 최대 500건씩 처리하고, 분석은 최신 미분석 건과 과거 후보 갱신을 나누어 처리한다. export도 최신 결과를 먼저 내보내므로 과거 이관/큐 복구 중에도 새 로그를 분석할 수 있다. API는 1 worker/4 threads로 요청을 처리한다. MariaDB 계정은 IP 기반이며 `skip-name-resolve`로 인증 중 DNS 역조회 지연을 방지한다. 기존 hostname 기반 grant가 있으면 설치를 중단하고 확인한다.
 
 WAS에 남은 과거 DB·수집 파일·로컬 DB 백업은 별도의 정리 승인을 받은 경우에만 삭제/초기화한다. 먼저 중앙 백업 경로와 SHA256을 검증한 뒤 승인 범위의 파일만 처리하며 중앙 백업은 유지한다. 승인이 없으면 과거 파일은 보존하되 신규 관제 로그의 운영 저장은 중앙 DB에서만 진행한다.
 
 업그레이드는 중앙 배치 코드를 검증해 적용한다. 기본 단일 서버 `install.sh --upgrade`로 중앙 서비스를 덮어쓰지 않는다. 새 agent는 receiver 허용 IP, IP 매핑과 관제 호스트 등록을 추가한 뒤 동일 전달 스크립트로 구성한다.
 
 설계 근거: [rsyslog ommysql](https://docs.rsyslog.com/doc/configuration/modules/ommysql.html), [SQL 템플릿](https://docs.rsyslog.com/doc/reference/parameters/ommysql-template.html), [MariaDB 인덱스](https://mariadb.com/docs/server/reference/sql-statements/data-definition/create/create-index).
+
+## 5분 배치와 수동 전송
+
+`install_agent_batch.py --db-ip <primary-address>`는 기존 omfwd 구성을 백업하고, omprog의 메시지 확인 응답을 이용해 원문을 Agent의 `/var/lib/rsyslog/malsonsa-agent/pending.db`에 먼저 영구 저장한다. 로컬 서비스 로그는 그대로 유지한다. `malsonsa-agent-flush.timer`는 매 5분 경계에 TCP syslog를 DB로 전송한다. 전송 전 연결 실패 시 대기 레코드는 남는다. 전송 속도는 기본 256 KiB/s로 제한한다. TCP의 send 성공은 DB 커밋 확인이 아니므로 기존 omfwd와 마찬가지로 네트워크 장애·프로세스 중단 시 중복 또는 전달 불확실성이 발생할 수 있다. 확인 응답이 필요한 운영망에서는 RELP 등 별도 신뢰 전송을 검토한다. Agent 큐 디스크 여유 공간도 모니터링한다.
+
+WAS 분석기는 5분 경계 이후 정규화·분석하며, 대기 중에는 DB를 조회하지 않는다. 분석할 이벤트가 없는 배치에서는 대량 후보 조회를 생략한다. DB export도 5분 주기이다. 웹 화면 자동 새로고침은 300초이며 1초마다 상대 시각을 바꾸는 작업은 브라우저 내부 렌더링으로 네트워크 요청을 하지 않는다. 최초 화면 진입·탭 전환·검색·HOLD·저장·룰 수정 등 사용자의 명시적 조작은 즉시 조회한다.
+
+수동 ‘로그 새로고침’은 `POST /api/collection/refresh`를 호출한다. `/etc/malsonsa/agent-flush.json`의 고정 Agent 주소·키·known_hosts만 사용하며 요청 파라미터로 명령이나 호스트를 받지 않는다. WAS의 전용 SSH 키는 Agent에서 `restrict,from="<WAS IP>",command="/usr/local/sbin/malsonsa-agent-flush"`로 제한한다. 셸·포트 전달·임의 명령을 허용하지 않고 호스트 키를 검증한다. 키·주소·인증 파일은 서버에만 배포하며 Git에 포함하지 않는다. Agent 전송 후 WAS는 도착한 원문을 최대 5,000건/10초 동안 즉시 정규화하고 로컬 Unix 소켓으로 분석기를 깨운다. 대규모 큐는 후속 주기에 계속 처리하며, 화면에는 전송 실패를 성공으로 표시하지 않는다. 저장용 JSON/색인 export가 아직 끝나지 않아도 API는 최신 DB 원문에서 위험도를 계산할 수 있다.
+
+기존 `central-rsyslog-forward.sh`는 연속 전송용 설치 경로이다. 이번 5분 모드에서는 그 뒤에 배치 설치기를 적용한다. 이 모드의 WAS는 자체 로그만 로컬 파일로 보관하며, 관제 Agent 원본과 분석 결과의 중앙 저장 정책은 유지한다.
+
+omprog 확인 응답 근거: [rsyslog confirmMessages](https://docs.rsyslog.com/doc/reference/parameters/omprog-confirmmessages.html).
 

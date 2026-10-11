@@ -22,7 +22,7 @@
   <div id="hostTabs" class="tabs"></div>
 
   <div class="toolbar">
-    <button class="primary" onclick="refreshAll()">↻ 로그 새로고침</button>
+    <button class="primary" onclick="refreshAll(true)">↻ 로그 새로고침</button>
 
     <select id="timeRange" aria-label="로그 조회 기간" onchange="filtersChanged()">
       <option value="300" selected>최근 5분</option>
@@ -45,7 +45,8 @@
     </select>
 
     <input id="q" aria-label="로그 검색" placeholder="IP, 사용자 또는 메시지 검색" oninput="filtersChanged()">
-    <label><input id="autoRefresh" type="checkbox" checked> 자동 새로고침(3초)</label>
+    <label><input id="autoRefresh" type="checkbox" checked> 자동 새로고침(5분)</label>
+    <span id="collectionStatus" class="subtext" role="status">Agent 전송·자동 분석 5분 주기</span>
     <select id="detectionFilter" aria-label="수집 로그 위험도 필터" onchange="renderEvents()"><option value="all">전체 로그</option><option value="matched">룰 탐지 로그만</option><option value="critical">종합 Critical ≥120</option><option value="high">종합 High 90–119</option><option value="medium">종합 Medium 60–89</option><option value="low">종합 Low 0–59</option></select>
     <span style="margin-left:auto" id="currentView">현재 보기: 전체 관제 대상</span>
   </div>
@@ -495,10 +496,23 @@ async function loadEvents(token=++viewRequest){
   }
 }
 
-async function refreshAll(){
+async function refreshAll(manual=false){
   if(refreshBusy) return;
   refreshBusy=true;
   try{
+    if(manual){
+      collectionStatus.textContent='Agent 로그 전송 요청 중…';
+      try{
+        const response=await fetch('/api/collection/refresh',{method:'POST'});
+        if(!response.ok) throw new Error('HTTP '+response.status);
+        const result=await response.json();
+        collectionStatus.textContent=result.agent?.status==='failed'
+          ? 'Agent 전송 요청 실패 · DB에 도착한 로그를 조회합니다.'
+          : result.agent?.status==='sent'
+            ? `Agent ${Number(result.agent.sent)}건 전송 · DB 새 로그 ${Number(result.normalized)}건 반영`
+            : 'DB에 도착한 로그를 새로 조회했습니다.';
+      }catch(error){collectionStatus.textContent='전송 요청 실패 · DB에 도착한 로그를 조회합니다.';}
+    }
     await loadHosts();
     await loadActiveView();
     if(anchorId && activeView!=='sources') await loadSimilar();
@@ -596,7 +610,7 @@ refreshAll();
 
 setInterval(()=>{
   if(document.getElementById('autoRefresh').checked) refreshAll();
-},3000);
+},300000);
 
 setInterval(()=>renderEvents(),1000);
 </script>

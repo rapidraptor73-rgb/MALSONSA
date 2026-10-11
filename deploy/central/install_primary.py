@@ -72,7 +72,7 @@ def main():
     result=subprocess.run(['mariadb'],input=sql,text=True,capture_output=True)
     if result.returncode:raise RuntimeError('MariaDB schema/grant setup failed; credentials omitted')
     app=Path('/opt/malsonsa/backend');app.mkdir(parents=True,exist_ok=True)
-    for name in ('central_store.py','central_exporter.py','central_archive.py'):
+    for name in ('central_store.py','collection_control.py','central_exporter.py','central_archive.py'):
         shutil.copy2(source/'backend'/name,app/name)
     command('python3','-m','venv','/opt/malsonsa/venv')
     command('/opt/malsonsa/venv/bin/python','-m','pip','install','-r',str(source/'backend/requirements.lock.txt'))
