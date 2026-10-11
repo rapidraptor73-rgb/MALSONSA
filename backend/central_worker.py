@@ -3,11 +3,12 @@ import hashlib
 import json
 import os
 import time
+import threading
 from datetime import datetime, timezone
 
 os.environ['SOC_DISABLE_INGESTOR'] = '1'
 import app as siem
-from central_store import julian, insert_normalized, version as rules_version
+from central_store import julian, version as rules_version
 
 
 def consume_raw(limit=100):
@@ -42,13 +43,13 @@ def consume_raw(limit=100):
         connection.close()
 
 
-def analyze_batch(ids=None, version=None, limit=100):
+def analyze_batch(ids=None, version=None, limit=100, newest=False):
     connection=siem.db()
     try:
         version=version or rules_version(connection)
         if ids is None:
             rows=connection.execute('SELECT e.* FROM events e LEFT JOIN analysis_results a ON a.event_id=e.id '
-                'WHERE a.event_id IS NULL OR a.rules_version<>? ORDER BY e.id LIMIT ?', (version,limit)).fetchall()
+                'WHERE a.event_id IS NULL OR a.rules_version<>? ORDER BY e.id '+('DESC' if newest else 'ASC')+' LIMIT ?', (version,limit)).fetchall()
         elif not ids:
             return 0
         else:
@@ -118,11 +119,18 @@ def analyze_batch(ids=None, version=None, limit=100):
 
 def run():
     # Only the central DB server's exporter writes files. WAS holds bounded batches in RAM.
+    def normalize_loop():
+        while True:
+            try:
+                if not consume_raw(500):time.sleep(1)
+            except Exception as exc:
+                print('[NORMALIZE] retry after '+type(exc).__name__,flush=True);time.sleep(5)
+    # Independent connections let raw persistence progress during historical analysis.
+    threading.Thread(target=normalize_loop,daemon=True).start()
     previous=None
     refresh_ids=[]
     while True:
         try:
-            added=consume_raw()
             connection=siem.db()
             try:
                 version=rules_version(connection)
@@ -133,12 +141,12 @@ def run():
                     previous=marker
             finally:
                 connection.close()
-            processed=analyze_batch(version=version)
+            processed=analyze_batch(version=version,newest=True)
             if refresh_ids:
                 batch=refresh_ids[:100]
                 analyze_batch(batch,version)
                 refresh_ids=refresh_ids[100:]
-            if not (added or processed or refresh_ids):
+            if not (processed or refresh_ids):
                 time.sleep(2)
         except Exception as exc:
             # Avoid credentials and raw payloads in journal messages.

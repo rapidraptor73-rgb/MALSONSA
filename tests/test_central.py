@@ -182,4 +182,10 @@ class MariaDBIntegrationTests(unittest.TestCase):
             self.assertEqual(c.execute('SELECT COUNT(*) FROM events WHERE raw_id IS NOT NULL').fetchone()[0],50)
             self.assertEqual(c.execute('SELECT COUNT(*) FROM raw_logs r JOIN events e ON e.id=r.normalized_id AND e.raw_id=r.id').fetchone()[0],50)
         finally:c.close()
-        self.assertEqual(worker.analyze_batch(),52)
+        self.assertEqual(worker.analyze_batch(limit=10,newest=True),10)
+        c=Connection()
+        try:
+            newest=c.execute('SELECT MAX(id) FROM events').fetchone()[0]
+            self.assertIsNotNone(c.execute('SELECT 1 FROM analysis_results WHERE event_id=?',(newest,)).fetchone())
+        finally:c.close()
+        self.assertEqual(worker.analyze_batch(),42)

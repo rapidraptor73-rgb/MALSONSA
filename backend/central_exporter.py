@@ -87,7 +87,7 @@ def materialize(root,payload,previous=()):
 def export_batch(root,limit=100):
     connection=Connection()
     try:
-        rows=connection.execute('SELECT * FROM analysis_results WHERE exported_revision<revision ORDER BY event_id LIMIT ?',(limit,)).fetchall()
+        rows=connection.execute('SELECT * FROM analysis_results WHERE exported_revision<revision ORDER BY event_id DESC LIMIT ?',(limit,)).fetchall()
         for row in rows:
             old=connection.execute('SELECT paths_json FROM analysis_export_paths WHERE event_id=?',(row['event_id'],)).fetchone()
             paths=materialize(root,json.loads(row['payload_json']),json.loads(old['paths_json']) if old else ())
