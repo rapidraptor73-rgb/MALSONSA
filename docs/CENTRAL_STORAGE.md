@@ -30,13 +30,13 @@ WAS의 API도 중앙 MariaDB를 사용한다. HOLD·즐겨찾기·관제 호스�
     similar-tuples.txt
 ```
 
-IP는 읽을 수 있는 그대로 표현하고, 사용자 등 디렉터리 값의 경로 구분자는 percent encoding으로 표현한다. `.`·`..` 특수 디렉터리 값도 인코딩한다. 시간 경로는 UTC 기준이다. 경로 이탈과 심볼릭 링크를 거부한다. JSON은 한 원본 파일만 쓰고 미시 색인은 같은 파일에 대한 하드 링크로 만들어 중복 데이터를 줄인다. 룰/위험도 변경 시 옛 링크를 제거하고 새 링크를 원자적으로 교체한다.
+IP는 읽을 수 있는 그대로 표현하고, 사용자 등 디렉터리 값의 경로 구분자는 percent encoding으로 표현한다. `.`·`..` 특수 디렉터리 값도 인코딩하고 긴 값은 해시 접미사를 붙여 충돌을 방지한다. 시간 경로는 UTC 기준이다. 경로 이탈과 심볼릭 링크를 거부한다. JSON은 한 원본 파일만 쓰고 미시 색인은 같은 파일에 대한 하드 링크로 만들어 중복 데이터를 줄인다. 룰/위험도 변경 시 옛 링크를 제거하고 새 링크를 원자적으로 교체한다.
 
 `position.txt`는 해당 앵커 JSON의 루트 기준 상대 경로 한 줄이다. `similar-tuples.txt`는 상관관계가 있는 로그만 `[anchor_id, similar_id, similar_score, delta_seconds]` JSON 배열 튜플로 한 줄씩 저장한다. 빈 파일은 저장된 연관 로그가 없다는 뜻이다. JSON에는 원본 `raw_id`, 정규화된 이벤트, 룰 근거, 위험도 합계, Similar 연결, 룰 버전과 후보 집합 버전을 저장한다.
 
 HOLD 시 WAS는 DB 서버의 인증된 private archive API에 요청한다. DB 서버는 `position.txt`를 읽고 경로를 검증한 뒤 JSON과 튜플을 반환한다. Similar는 튜플의 ID로 중앙 DB의 인덱스/기본키를 사용해 관련 로그만 조회한다. 즉 WAS 파일시스템에 원격 DB 디렉터리를 마운트하거나 분석 파일을 복사하지 않는다.
 
-새 로그 또는 룰·호스트 변경으로 스냅샷이 오래됐거나 export가 아직 끝나지 않았으면 현재 데이터를 WAS 메모리에서 다시 분석한다. 파일은 비동기 작업으로 갱신된다. 저장 색인은 기본 60분/60점 이상/최대 500개 Similar를 대상으로 한다. 더 넓은 조회 조건도 메모리 재분석으로 처리한다. 저장된 점수는 분석 시점의 검토 우선순위이며 공격 확률이나 공격 확정 판정이 아니다.
+새 로그가 해당 앵커의 Similar 조건에 일치하거나 룰·호스트 변경으로 스냅샷이 오래됐거나 export가 아직 끝나지 않았으면 현재 데이터를 WAS 메모리에서 다시 분석한다. 무관한 새 로그는 저장 색인을 계속 재사용한다. 파일은 비동기 작업으로 갱신된다. 저장 색인은 기본 60분/60점 이상/최대 500개 Similar를 대상으로 한다. 더 넓은 조회 조건도 메모리 재분석으로 처리한다. 저장된 점수는 분석 시점의 검토 우선순위이며 공격 확률이나 공격 확정 판정이 아니다.
 
 ## SQL 인덱스와 재참조 API
 
@@ -62,3 +62,4 @@ WAS 변경은 매번 사용자 승인을 받는다. `install_was.py prepare`는 
 업그레이드는 중앙 배치 코드를 검증해 적용한다. 기본 단일 서버 `install.sh --upgrade`로 중앙 서비스를 덮어쓰지 않는다. 새 agent는 receiver 허용 IP, IP 매핑과 관제 호스트 등록을 추가한 뒤 동일 전달 스크립트로 구성한다.
 
 설계 근거: [rsyslog ommysql](https://docs.rsyslog.com/doc/configuration/modules/ommysql.html), [SQL 템플릿](https://docs.rsyslog.com/doc/reference/parameters/ommysql-template.html), [MariaDB 인덱스](https://mariadb.com/docs/server/reference/sql-statements/data-definition/create/create-index).
+

@@ -15,14 +15,24 @@ def consume_raw(limit=100):
     try:
         # One worker is active; unique raw_id also makes recovery idempotent.
         rows=connection.execute('SELECT * FROM raw_logs WHERE normalized_id IS NULL ORDER BY id LIMIT ?', (limit,)).fetchall()
+        fields=['time','host_ip','hostname','src_ip','dst_ip','event','user','program','facility','severity','mitre','score','message','raw_line']
+        records=[]
         for row in rows:
             line='|'.join(str(row.get(key) or '') for key in
                 ('event_time','hostname','host_ip','facility','severity','program','message'))
             event=siem.parse_rsyslog_line(line)
             event['raw_line']=row['raw_line']
-            insert_normalized(connection,event,row['id'])
-            normalized=connection.execute('SELECT id FROM events WHERE raw_id=?',(row['id'],)).fetchone()
-            connection.execute('UPDATE raw_logs SET normalized_id=? WHERE id=?',(normalized['id'],row['id']))
+            records.append([event.get(field) for field in fields]+[julian(event['time']),row['id']])
+        if records:
+            connection.executemany('INSERT IGNORE INTO events('+','.join(fields+['time_jd','raw_id'])+') VALUES('
+                +','.join('?' for _ in range(len(fields)+2))+')',records)
+            raw_ids=[row['id'] for row in rows]
+            normalized=connection.execute('SELECT id,raw_id FROM events WHERE raw_id IN ('+','.join('?' for _ in raw_ids)+')',raw_ids).fetchall()
+            updates=[]
+            for row in normalized:updates.extend([row['raw_id'],row['id']])
+            if len(normalized)!=len(rows):raise RuntimeError('Missing normalized raw identity')
+            connection.execute('UPDATE raw_logs SET normalized_id=CASE id '+
+                ' '.join('WHEN ? THEN ?' for _ in normalized)+' END WHERE id IN ('+','.join('?' for _ in raw_ids)+')',updates+raw_ids)
         connection.commit()
         return len(rows)
     except Exception:
@@ -54,6 +64,10 @@ def analyze_batch(ids=None, version=None, limit=100):
             by_host[host]=[dict(row) for row in candidates]
         pool_max=pool[0]['id'] if pool else 0
         siem.annotate_event_risk(siem.annotate_rules(events),connection)
+        event_ids=[event['id'] for event in events]
+        previous={row['event_id']:row['content_hash'] for row in connection.execute(
+            'SELECT event_id,content_hash FROM analysis_results WHERE event_id IN ('+','.join('?' for _ in event_ids)+')',event_ids)} if event_ids else {}
+        changed=[];rule_records=[]
         for event in events:
             parsed=siem.parse_time(event['time'])
             hour=parsed.astimezone(timezone.utc).strftime('%Y-%m-%d/%H') if parsed else 'unknown/00'
@@ -76,21 +90,23 @@ def analyze_batch(ids=None, version=None, limit=100):
             payload['similar']=sorted(similar,key=lambda row:(-row['similar_score'],-row['id']))[:500]
             encoded=json.dumps(payload,sort_keys=True,ensure_ascii=False,separators=(',',':'))
             digest=hashlib.sha256(encoded.encode()).hexdigest()
-            old=connection.execute('SELECT content_hash FROM analysis_results WHERE event_id=?',(event['id'],)).fetchone()
-            if old and old['content_hash']==digest:
+            if previous.get(event['id'])==digest:
                 continue
             values=[event['id'],event.get('raw_id'),event.get('host_ip'),event.get('src_ip'),event['event'],hour,
                     julian(event['time']),event['risk_summary']['total_score'],encoded,digest,version,siem.now_iso()]
-            connection.execute('INSERT INTO analysis_results(event_id,raw_id,host_ip,src_ip,event,hour_key,time_jd,'
+            changed.append(values)
+            for hit in event.get('detections',[]):
+                rule_records.append((hit['rule_id'],event['id'],julian(event['time'])))
+        if changed:
+            connection.executemany('INSERT INTO analysis_results(event_id,raw_id,host_ip,src_ip,event,hour_key,time_jd,'
                 'total_score,payload_json,content_hash,rules_version,analyzed_at) VALUES('+','.join('?' for _ in values)+') '
                 'ON DUPLICATE KEY UPDATE raw_id=VALUES(raw_id),host_ip=VALUES(host_ip),src_ip=VALUES(src_ip),'
                 'event=VALUES(event),hour_key=VALUES(hour_key),time_jd=VALUES(time_jd),total_score=VALUES(total_score),'
                 'payload_json=VALUES(payload_json),content_hash=VALUES(content_hash),rules_version=VALUES(rules_version),'
-                'analyzed_at=VALUES(analyzed_at),revision=revision+1',values)
-            connection.execute('DELETE FROM analysis_rule_index WHERE event_id=?',(event['id'],))
-            for hit in event.get('detections',[]):
-                connection.execute('INSERT INTO analysis_rule_index(rule_id,event_id,time_jd) VALUES(?,?,?)',
-                                   (hit['rule_id'],event['id'],julian(event['time'])))
+                'analyzed_at=VALUES(analyzed_at),revision=revision+1',changed)
+            changed_ids=[row[0] for row in changed]
+            connection.execute('DELETE FROM analysis_rule_index WHERE event_id IN ('+','.join('?' for _ in changed_ids)+')',changed_ids)
+            if rule_records:connection.executemany('INSERT INTO analysis_rule_index(rule_id,event_id,time_jd) VALUES(?,?,?)',rule_records)
         connection.commit()
         return len(events)
     except Exception:

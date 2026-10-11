@@ -55,6 +55,11 @@ try:
         print('HOLD position.txt:',held['archive']['position'],flush=True)
         print('Similar count:',len(similar['similar']),'lookup:',similar.get('lookup','fresh-memory'),
               'elapsed_ms:',round(elapsed*1000,2),flush=True)
+        # Base similarity scores are multiples of five; 59 forces the RAM path
+        # while selecting the same set as 60 for this probe.
+        started=time.perf_counter();fallback=api('/api/similar/'+str(anchor)+'?min_score=59');fallback_elapsed=time.perf_counter()-started
+        assert [row['id'] for row in fallback['similar']]==[row['id'] for row in similar['similar']]
+        print('Same-result fresh-memory elapsed_ms:',round(fallback_elapsed*1000,2),'(single lab observation)',flush=True)
         print('SRC count/risk:',source['event_count'],source['risk_score'],flush=True)
     finally:
         api('/api/bookmarks/'+str(anchor),'DELETE');api('/api/anchors/'+str(anchor),'DELETE')

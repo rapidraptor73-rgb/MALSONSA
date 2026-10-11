@@ -445,6 +445,26 @@ def event_by_id(event_id):
     finally:
         c.close()
 
+
+def central_archive_reusable(c, payload, anchor, minimum, window):
+    """Reuse an index while newer, unrelated messages arrive on the same host."""
+    previous=payload.get('host_max_id')
+    if previous is None or payload.get('rules_version')!=_central_module.version(c):return False
+    where='host_ip=?' if anchor.get('host_ip') else "(host_ip IS NULL OR host_ip='')"
+    params=[anchor['host_ip']] if anchor.get('host_ip') else []
+    newer=[dict(row) for row in c.execute('SELECT * FROM events WHERE '+where+' AND id>? ORDER BY id DESC LIMIT 501',params+[previous])]
+    if len(newer)>500:return False
+    at=parse_time(anchor.get('time'))
+    if not at:return False
+    for candidate in newer:
+        instant=parse_time(candidate.get('time'))
+        if instant:
+            difference=abs((instant-at).total_seconds())
+            if difference<=window and similar_score(anchor,candidate,difference)[0]>=minimum:return False
+    floor=c.execute('SELECT id FROM events WHERE '+where+' ORDER BY id DESC LIMIT 1 OFFSET 4999',params).fetchone()
+    if floor and any(row['id']<floor['id'] for row in payload.get('similar',[])):return False
+    return True
+
 def sequence_bonus(a, b):
     chain = [
         ("SCAN", "AUTH_FAILURE"),
@@ -990,10 +1010,8 @@ def api_similar(event_id):
             stored=_central_module.read_archive(event_id)
             if stored:
                 payload=stored['analysis']
-                maximum=(c.execute('SELECT MAX(id) FROM events WHERE host_ip=?',(anchor['host_ip'],)).fetchone()[0] if anchor.get('host_ip') else
-                         c.execute("SELECT MAX(id) FROM events WHERE host_ip IS NULL OR host_ip=''").fetchone()[0])
                 matches_host=scope_host_ip==anchor.get('host_ip') or (scope_host_ip=='__legacy__' and not anchor.get('host_ip'))
-                if payload.get('host_max_id')==maximum and payload.get('rules_version')==_central_module.version(c) and matches_host:
+                if matches_host and central_archive_reusable(c,payload,anchor,min_score,window):
                     selected=[row for row in payload.get('similar',[]) if row['similar_score']>=min_score and row['seconds']<=window]
                     ids=[row['id'] for row in selected]
                     rows={row['id']:dict(row) for row in c.execute('SELECT * FROM events WHERE id IN ('+','.join('?' for _ in ids)+')',ids)} if ids else {}

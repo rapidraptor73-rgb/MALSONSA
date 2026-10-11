@@ -151,6 +151,12 @@ class MariaDBIntegrationTests(unittest.TestCase):
                 self.module._central_module.insert_normalized(c,other);c.commit()
             finally:c.close()
             self.assertEqual(self.client.get('/api/similar/'+str(anchor_id)).json.get('lookup'),'position-txt')
+            c=Connection()
+            try:
+                unrelated=self.module.parse_rsyslog_line('2026-10-11T00:03:00Z|agent|192.0.2.10|daemon|info|filebeat|harvester started')
+                self.module._central_module.insert_normalized(c,unrelated);c.commit()
+            finally:c.close()
+            self.assertEqual(self.client.get('/api/similar/'+str(anchor_id)).json.get('lookup'),'position-txt')
             # New data invalidates this snapshot and forces current in-memory analysis.
             c=Connection()
             try:
@@ -158,3 +164,22 @@ class MariaDBIntegrationTests(unittest.TestCase):
                 self.module._central_module.insert_normalized(c,event);c.commit()
             finally:c.close()
             self.assertNotEqual(self.client.get('/api/similar/'+str(anchor_id)).json.get('lookup'),'position-txt')
+
+    def test_burst_raw_processing_preserves_every_identity_across_batches(self):
+        c=Connection()
+        try:
+            records=[('2026-10-11T00:04:00Z','192.0.2.10','agent','daemon','info','filebeat',
+                      'harvester probe '+str(index),'raw probe '+str(index)) for index in range(50)]
+            c.executemany('INSERT INTO raw_logs(event_time,host_ip,hostname,facility,severity,program,message,raw_line) VALUES(?,?,?,?,?,?,?,?)',records)
+            c.commit()
+        finally:c.close()
+        spec=importlib.util.spec_from_file_location('central_worker_burst',BACKEND/'central_worker.py')
+        worker=importlib.util.module_from_spec(spec)
+        with patch.dict(sys.modules,{'app':self.module}):spec.loader.exec_module(worker)
+        self.assertEqual([worker.consume_raw(20) for _ in range(4)],[20,20,10,0])
+        c=Connection()
+        try:
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM events WHERE raw_id IS NOT NULL').fetchone()[0],50)
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM raw_logs r JOIN events e ON e.id=r.normalized_id AND e.raw_id=r.id').fetchone()[0],50)
+        finally:c.close()
+        self.assertEqual(worker.analyze_batch(),52)
