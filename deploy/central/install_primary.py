@@ -47,9 +47,13 @@ def main():
     credentials=json.loads(secret_file.read_text()) if secret_file.exists() else {
         name:secrets.token_hex(24) for name in ('was','collector','exporter','archive_token')}
     write(secret_file,json.dumps(credentials))
-    write('/etc/mysql/mariadb.conf.d/60-malsonsa.cnf','[mysqld]\nbind-address='+args.db_ip+
-          '\ncharacter-set-server=utf8mb4\ncollation-server=utf8mb4_unicode_ci\n',0o644)
     command('systemctl','enable','--now','mariadb')
+    for host in subprocess.check_output(['mariadb','-N','-e','SELECT Host FROM mysql.user'],text=True).splitlines():
+        if host not in ('localhost','%'):
+            try:ipaddress.ip_address(host)
+            except ValueError:raise RuntimeError('Existing hostname-based DB grants need review before enabling IP-only authentication')
+    write('/etc/mysql/mariadb.conf.d/60-malsonsa.cnf','[mysqld]\nbind-address='+args.db_ip+
+          '\nskip-name-resolve\ncharacter-set-server=utf8mb4\ncollation-server=utf8mb4_unicode_ci\n',0o644)
     command('systemctl','restart','mariadb')
     # All grant host values are validated addresses, credentials are hexadecimal.
     sql="CREATE DATABASE IF NOT EXISTS malsonsa CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;\n"

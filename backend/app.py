@@ -452,7 +452,7 @@ def central_archive_reusable(c, payload, anchor, minimum, window):
     if previous is None or payload.get('rules_version')!=_central_module.version(c):return False
     where='host_ip=?' if anchor.get('host_ip') else "(host_ip IS NULL OR host_ip='')"
     params=[anchor['host_ip']] if anchor.get('host_ip') else []
-    newer=[dict(row) for row in c.execute('SELECT * FROM events WHERE '+where+' AND id>? ORDER BY id DESC LIMIT 501',params+[previous])]
+    newer=[dict(row) for row in c.execute('SELECT id,time,host_ip,src_ip,dst_ip,user,event,mitre FROM events WHERE '+where+' AND id>? ORDER BY id DESC LIMIT 501',params+[previous])]
     if len(newer)>500:return False
     at=parse_time(anchor.get('time'))
     if not at:return False

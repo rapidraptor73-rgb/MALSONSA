@@ -59,6 +59,10 @@ WAS 변경은 매번 사용자 승인을 받는다. `install_was.py prepare`는 
 
 운영 확인: DB의 `mariadb`, `rsyslog`, `soc-central-exporter`, `soc-central-archive`; WAS의 `soc-siem`, `soc-central-worker`, `nginx`, `rsyslog`; agent의 `rsyslog`. 미처리 원본과 `exported_revision<revision`의 분석 수로 지연을 점검한다. DB 장애 시 agent/DB 수신기의 디스크 큐와 worker 재시도로 복구하며 큐 용량/디스크 가용량을 모니터링한다.
 
+원본 정규화는 독립 연결의 스레드에서 최대 500건씩 처리하고, 분석은 최신 미분석 건과 과거 후보 갱신을 나누어 처리한다. export도 최신 결과를 먼저 내보내므로 과거 이관/큐 복구 중에도 새 로그를 분석할 수 있다. API는 1 worker/4 threads로 요청을 처리한다. MariaDB 계정은 IP 기반이며 `skip-name-resolve`로 인증 중 DNS 역조회 지연을 방지한다. 기존 hostname 기반 grant가 있으면 설치를 중단하고 확인한다.
+
+WAS에 남은 과거 DB·수집 파일·로컬 DB 백업은 별도의 정리 승인을 받은 경우에만 삭제/초기화한다. 먼저 중앙 백업 경로와 SHA256을 검증한 뒤 승인 범위의 파일만 처리하며 중앙 백업은 유지한다. 승인이 없으면 과거 파일은 보존하되 신규 관제 로그의 운영 저장은 중앙 DB에서만 진행한다.
+
 업그레이드는 중앙 배치 코드를 검증해 적용한다. 기본 단일 서버 `install.sh --upgrade`로 중앙 서비스를 덮어쓰지 않는다. 새 agent는 receiver 허용 IP, IP 매핑과 관제 호스트 등록을 추가한 뒤 동일 전달 스크립트로 구성한다.
 
 설계 근거: [rsyslog ommysql](https://docs.rsyslog.com/doc/configuration/modules/ommysql.html), [SQL 템플릿](https://docs.rsyslog.com/doc/reference/parameters/ommysql-template.html), [MariaDB 인덱스](https://mariadb.com/docs/server/reference/sql-statements/data-definition/create/create-index).

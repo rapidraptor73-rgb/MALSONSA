@@ -132,7 +132,8 @@ def apply():
         'SOC_IP_MAP={"172.16.16.141":"203.230.52.214","172.16.12.20":"203.230.52.185"}\n')
     command('chown','root:socsiem','/etc/malsonsa','/etc/malsonsa/central.json','/etc/malsonsa/central.env')
     command('chmod','0750','/etc/malsonsa')
-    write('/etc/systemd/system/soc-siem.service.d/central.conf','[Service]\nEnvironmentFile=/etc/malsonsa/central.env\nEnvironment=PYTHONDONTWRITEBYTECODE=1\n')
+    write('/etc/systemd/system/soc-siem.service.d/central.conf','[Service]\nEnvironmentFile=/etc/malsonsa/central.env\nEnvironment=PYTHONDONTWRITEBYTECODE=1\n'
+        'ExecStart=\nExecStart=/opt/soc/venv/bin/gunicorn --workers 1 --threads 4 --bind 127.0.0.1:8000 --timeout 90 app:app\n')
     # The worker uses the same central connection environment as the API.
     unit=Path('/etc/systemd/system/soc-central-worker.service')
     write(unit,unit.read_text().replace('/etc/soc-siem.env','/etc/malsonsa/central.env'),0o644)
@@ -169,6 +170,7 @@ def retire():
         path=Path(item['source'])
         resolved=path.resolve()
         allowed=(resolved==allowed_db or resolved==ROOT/'legacy.db' or
+                 (resolved.parent.parent==Path('/tmp') and resolved.parent.name.startswith('malsonsa-central-was-') and path.name=='legacy.db') or
                  (resolved.is_relative_to(Path('/var/backups/malsonsa')) and path.name=='siem.db') or
                  (resolved.is_relative_to(Path('/var/log/soc')) and path.name.startswith('all-rsyslog.log')))
         if not allowed or path.is_symlink():raise RuntimeError('Unexpected retirement path')
