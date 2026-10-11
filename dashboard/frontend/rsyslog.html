@@ -113,6 +113,7 @@ let serverClockOffsetMs=0;
 let similarEvents=[];
 let currentAnchor=null;
 let refreshBusy=false;
+let previousRenderKey=null;
 
 /*
  * Python datetime.isoformat() can emit microseconds:
@@ -266,7 +267,6 @@ function selectHost(v){
 }
 
 function renderEvents(){
-  const opened=openDetails(eventsBody);
   const rows=filteredEvents();
   eventCount.textContent=rows.length;
   apiLoaded.textContent=allEvents.length;
@@ -278,13 +278,21 @@ function renderEvents(){
   lastReceived.textContent=newest ? eventTime(newest) : '-';
   lastAge.textContent=newest ? ageText(eventTime(newest)) : '-';
 
+  const renderKey=JSON.stringify(rows);
+  if(renderKey===previousRenderKey && !eventsBody.querySelector('.empty-state,td.bad[colspan]')){
+    eventsBody.querySelectorAll('[data-age]').forEach(element=>{element.textContent=ageText(element.dataset.age);});
+    return;
+  }
+  previousRenderKey=renderKey;
+  const opened=openDetails(eventsBody);
+
   eventsBody.innerHTML=rows.map(e=>{
     const isNew=previousNewestId!==null && Number(e.id)>previousNewestId;
     const badTime=!parseTime(eventTime(e));
     return `<tr data-event-id="${Number(e.id)}" class="${isNew?'newrow':''}">
       <td>${e.held?'<span class="hold">● HOLD</span><br>':''}<button onclick="viewEvent(${Number(e.id)})">상세 보기</button></td>
       <td class="event-risk-cell">${SiemRisk.eventRiskHtml(e)}</td>
-      <td class="${badTime?'bad':''}"><span class="mono" title="${esc(eventTime(e))}">${esc(displayTime(e))}</span><span class="subtext">${esc(ageText(eventTime(e)))}</span></td>
+      <td class="${badTime?'bad':''}"><span class="mono" title="${esc(eventTime(e))}">${esc(displayTime(e))}</span><span class="subtext" data-age="${esc(eventTime(e))}">${esc(ageText(eventTime(e)))}</span></td>
       <td class="mono">${esc(e.host_ip||'-')}</td>
       <td><b>${esc(e.event||e.event_type||'-')}</b><span class="subtext">${esc(e.program||'-')} · ${esc(e.user||'-')}</span>${e.mitre?`<span class="tag">${esc(e.mitre)}</span>`:''}</td>
       <td class="mono">${esc(e.src_ip||'-')}</td>
