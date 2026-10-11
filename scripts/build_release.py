@@ -11,9 +11,9 @@ FILES=['VERSION','install.sh','README.md','docs/INSTALL.md','docs/RULES.md','ins
        'scripts/verify_install.py','scripts/build_release.py',
        'backend/app.py','backend/detection_rules.py','backend/hosts_api.py','backend/soc_event_enricher.py','backend/verify_src.py',
        'backend/requirements.txt','backend/requirements.lock.txt']
-FILES += ['backend/'+name for name in ('central_store.py','central_schema.sql','central_worker.py','central_exporter.py','central_archive.py')]
-FILES += ['deploy/central/'+name for name in ('central-rsyslog-forward.sh','install_primary.py','install_was.py')]
-FILES += ['deploy/systemd/'+name for name in ('soc-central-worker.service','soc-central-exporter.service','soc-central-archive.service')]
+FILES += ['backend/'+name for name in ('central_store.py','central_schema.sql','central_ingest.py','collection_control.py','central_worker.py','central_exporter.py','central_archive.py')]
+FILES += ['deploy/central/'+name for name in ('central-rsyslog-forward.sh','install_primary.py','install_was.py','agent_batch.py','install_agent_batch.py')]
+FILES += ['deploy/systemd/'+name for name in ('soc-central-worker.service','soc-central-exporter.service','soc-central-archive.service','malsonsa-agent-flush.service','malsonsa-agent-flush.timer')]
 FILES += ['docs/CENTRAL_STORAGE.md']
 FILES += ['docs/RELEASE_1.1.md']
 FILES += ['scripts/verify_central.py']

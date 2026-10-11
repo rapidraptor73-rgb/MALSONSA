@@ -126,3 +126,4 @@ jobs:
       - run: node ../../tests/test_risk_details.cjs
       - run: node ../../tests/test_event_render.cjs
       - run: node ../../tests/test_log_views.cjs
+      - run: cd ../.. && node tests/test_collection_refresh.cjs

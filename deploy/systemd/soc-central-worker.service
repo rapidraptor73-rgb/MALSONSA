@@ -12,6 +12,9 @@ Environment=PYTHONDONTWRITEBYTECODE=1
 ExecStart=/opt/soc/venv/bin/python /opt/soc/backend/central_worker.py
 Restart=on-failure
 RestartSec=5
+RuntimeDirectory=soc-central-worker
+RuntimeDirectoryMode=0750
+ReadWritePaths=/run/soc-central-worker
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true

@@ -3,7 +3,8 @@ import hashlib
 import json
 import os
 import time
-import threading
+import socket
+from collection_control import seconds_until_cycle, worker_socket
 from datetime import datetime, timezone
 
 os.environ['SOC_DISABLE_INGESTOR'] = '1'
@@ -12,35 +13,8 @@ from central_store import julian, version as rules_version
 
 
 def consume_raw(limit=100):
-    connection=siem.db()
-    try:
-        # One worker is active; unique raw_id also makes recovery idempotent.
-        rows=connection.execute('SELECT * FROM raw_logs WHERE normalized_id IS NULL ORDER BY id LIMIT ?', (limit,)).fetchall()
-        fields=['time','host_ip','hostname','src_ip','dst_ip','event','user','program','facility','severity','mitre','score','message','raw_line']
-        records=[]
-        for row in rows:
-            line='|'.join(str(row.get(key) or '') for key in
-                ('event_time','hostname','host_ip','facility','severity','program','message'))
-            event=siem.parse_rsyslog_line(line)
-            event['raw_line']=row['raw_line']
-            records.append([event.get(field) for field in fields]+[julian(event['time']),row['id']])
-        if records:
-            connection.executemany('INSERT IGNORE INTO events('+','.join(fields+['time_jd','raw_id'])+') VALUES('
-                +','.join('?' for _ in range(len(fields)+2))+')',records)
-            raw_ids=[row['id'] for row in rows]
-            normalized=connection.execute('SELECT id,raw_id FROM events WHERE raw_id IN ('+','.join('?' for _ in raw_ids)+')',raw_ids).fetchall()
-            updates=[]
-            for row in normalized:updates.extend([row['raw_id'],row['id']])
-            if len(normalized)!=len(rows):raise RuntimeError('Missing normalized raw identity')
-            connection.execute('UPDATE raw_logs SET normalized_id=CASE id '+
-                ' '.join('WHEN ? THEN ?' for _ in normalized)+' END WHERE id IN ('+','.join('?' for _ in raw_ids)+')',updates+raw_ids)
-        connection.commit()
-        return len(rows)
-    except Exception:
-        connection.rollback()
-        raise
-    finally:
-        connection.close()
+    from central_ingest import consume_raw as normalize
+    return normalize(siem.db, siem.parse_rsyslog_line, limit)
 
 
 def analyze_batch(ids=None, version=None, limit=100, newest=False):
@@ -55,7 +29,9 @@ def analyze_batch(ids=None, version=None, limit=100, newest=False):
         else:
             rows=connection.execute('SELECT * FROM events WHERE id IN ('+','.join('?' for _ in ids)+') ORDER BY id',ids).fetchall()
         events=[dict(row) for row in rows]
-        pool=[dict(row) for row in connection.execute('SELECT * FROM events ORDER BY id DESC LIMIT 5000')]
+        if not events:
+            return 0  # idle work must not fetch thousands of candidates
+        pool_max=connection.execute('SELECT MAX(id) FROM events').fetchone()[0] or 0
         by_host={}
         for host in {row.get('host_ip') for row in events}:
             if host:
@@ -63,7 +39,6 @@ def analyze_batch(ids=None, version=None, limit=100, newest=False):
             else:
                 candidates=connection.execute("SELECT * FROM events WHERE host_ip IS NULL OR host_ip='' ORDER BY id DESC LIMIT 5000")
             by_host[host]=[dict(row) for row in candidates]
-        pool_max=pool[0]['id'] if pool else 0
         siem.annotate_event_risk(siem.annotate_rules(events),connection)
         event_ids=[event['id'] for event in events]
         previous={row['event_id']:row['content_hash'] for row in connection.execute(
@@ -117,41 +92,51 @@ def analyze_batch(ids=None, version=None, limit=100, newest=False):
         connection.close()
 
 
+def run_cycle(previous=None):
+    # Drain the arrived raw snapshot in bounded batches before correlating in RAM.
+    while consume_raw(500):
+        pass
+    connection=siem.db()
+    try:
+        version=rules_version(connection)
+        current=connection.execute('SELECT MAX(id) FROM events').fetchone()[0]
+        marker=(version,current)
+        refresh_ids=([row[0] for row in connection.execute('SELECT id FROM events ORDER BY id DESC LIMIT 5000')]
+                     if marker!=previous else [])
+    finally:
+        connection.close()
+    while analyze_batch(version=version,newest=True):
+        pass
+    for offset in range(0,len(refresh_ids),100):
+        analyze_batch(refresh_ids[offset:offset+100],version)
+    return marker
+
+
 def run():
-    # Only the central DB server's exporter writes files. WAS holds bounded batches in RAM.
-    def normalize_loop():
+    # No DB connection or polling during the five-minute wait. Manual refresh wakes it.
+    server=worker_socket()
+    previous=None
+    try:
         while True:
             try:
-                if not consume_raw(500):time.sleep(1)
+                previous=run_cycle(previous)
             except Exception as exc:
-                print('[NORMALIZE] retry after '+type(exc).__name__,flush=True);time.sleep(5)
-    # Independent connections let raw persistence progress during historical analysis.
-    threading.Thread(target=normalize_loop,daemon=True).start()
-    previous=None
-    refresh_ids=[]
-    while True:
-        try:
-            connection=siem.db()
-            try:
-                version=rules_version(connection)
-                current=connection.execute('SELECT MAX(id) FROM events').fetchone()[0]
-                marker=(version,current)
-                if marker!=previous and not refresh_ids:
-                    refresh_ids=[row[0] for row in connection.execute('SELECT id FROM events ORDER BY id DESC LIMIT 5000')]
-                    previous=marker
-            finally:
-                connection.close()
-            processed=analyze_batch(version=version,newest=True)
-            if refresh_ids:
-                batch=refresh_ids[:100]
-                analyze_batch(batch,version)
-                refresh_ids=refresh_ids[100:]
-            if not (processed or refresh_ids):
-                time.sleep(2)
-        except Exception as exc:
-            # Avoid credentials and raw payloads in journal messages.
-            print('[CENTRAL] retry after '+type(exc).__name__,flush=True)
-            time.sleep(5)
+                print('[CENTRAL] retry at next collection cycle: '+type(exc).__name__,flush=True)
+            if server is None:
+                time.sleep(seconds_until_cycle())
+            else:
+                server.settimeout(seconds_until_cycle())
+                try:
+                    server.recv(64)
+                    server.setblocking(False)
+                    # Coalesce repeated button clicks accumulated during one analysis cycle.
+                    while True:
+                        try: server.recv(64)
+                        except BlockingIOError: break
+                except socket.timeout:
+                    pass
+    finally:
+        if server is not None: server.close()
 
 
 if __name__=='__main__':
