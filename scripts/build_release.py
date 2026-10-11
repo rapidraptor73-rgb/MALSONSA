@@ -15,6 +15,7 @@ FILES += ['backend/'+name for name in ('central_store.py','central_schema.sql','
 FILES += ['deploy/central/'+name for name in ('central-rsyslog-forward.sh','install_primary.py','install_was.py')]
 FILES += ['deploy/systemd/'+name for name in ('soc-central-worker.service','soc-central-exporter.service','soc-central-archive.service')]
 FILES += ['docs/CENTRAL_STORAGE.md']
+FILES += ['docs/RELEASE_1.1.md']
 FILES += ['scripts/verify_central.py']
 FILES += ['dashboard/frontend/'+name for name in ['index.html','hosts.html','rsyslog.html','rules.html','rules.js','theme.css','risk-details.js','site-config.js']]
 

@@ -39,23 +39,23 @@ jobs:
           python3 scripts/build_release.py
           cd release
           sha256sum -c SHA256SUMS
-          tar -xzf malsonsa-v1.0.tar.gz
-          cd malsonsa-v1.0
+          tar -xzf malsonsa-v1.1.tar.gz
+          cd malsonsa-v1.1
           sha256sum -c SHA256SUMS
           bash -n install.sh
       - name: Fresh install from packaged sources
-        run: sudo bash release/malsonsa-v1.0/install.sh --hostname localhost --web-port 18088 --backend-port 18089 --syslog-port 15514
+        run: sudo bash release/malsonsa-v1.1/install.sh --hostname localhost --web-port 18088 --backend-port 18089 --syslog-port 15514
       - name: Test TCP UDP UI and correlation
-        run: sudo python3 release/malsonsa-v1.0/scripts/verify_install.py --web-port 18088 --syslog-port 15514 --token-file release/probe.txt
+        run: sudo python3 release/malsonsa-v1.1/scripts/verify_install.py --web-port 18088 --syslog-port 15514 --token-file release/probe.txt
       - name: Upgrade and preserve existing database
         run: |
-          sudo bash release/malsonsa-v1.0/install.sh --upgrade --skip-os-packages --hostname localhost --web-port 18088 --backend-port 18089 --syslog-port 15514
+          sudo bash release/malsonsa-v1.1/install.sh --upgrade --skip-os-packages --hostname localhost --web-port 18088 --backend-port 18089 --syslog-port 15514
           sudo python3 - <<'PY'
           from pathlib import Path
           import subprocess
-          subprocess.run(['python3','release/malsonsa-v1.0/scripts/verify_install.py','--web-port','18088','--syslog-port','15514','--expect-token',Path('release/probe.txt').read_text()],check=True)
+          subprocess.run(['python3','release/malsonsa-v1.1/scripts/verify_install.py','--web-port','18088','--syslog-port','15514','--expect-token',Path('release/probe.txt').read_text()],check=True)
           PY
-          sudo python3 release/malsonsa-v1.0/scripts/verify_install.py --web-port 18088 --syslog-port 15514
+          sudo python3 release/malsonsa-v1.1/scripts/verify_install.py --web-port 18088 --syslog-port 15514
           sudo python3 - <<'PY'
           import sqlite3
           c=sqlite3.connect('/var/lib/soc-siem/siem.db')
@@ -66,7 +66,7 @@ jobs:
         run: |
           sudo logrotate -f /etc/logrotate.d/malsonsa
           sleep 2
-          sudo python3 release/malsonsa-v1.0/scripts/verify_install.py --web-port 18088 --syslog-port 15514
+          sudo python3 release/malsonsa-v1.1/scripts/verify_install.py --web-port 18088 --syslog-port 15514
       - name: Service diagnostics
         if: failure()
         run: |
@@ -74,9 +74,9 @@ jobs:
           sudo journalctl -u soc-siem -u soc-event-enricher -u rsyslog -n 100 --no-pager
       - uses: actions/upload-artifact@v4
         with:
-          name: malsonsa-v1.0-package
+          name: malsonsa-v1.1-package
           path: |
-            release/malsonsa-v1.0.tar.gz
+            release/malsonsa-v1.1.tar.gz
             release/SHA256SUMS
   merge-policy:
     runs-on: ubuntu-latest
