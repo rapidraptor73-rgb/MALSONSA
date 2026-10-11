@@ -34,6 +34,20 @@ def main():
     assert any(r['id']==found[1]['id'] for r in api('/api/similar/'+str(anchor))['similar'])
     api('/api/anchors/'+str(anchor),'DELETE')
     assert not any(r['id']==anchor for r in api('/api/anchors')['anchors'])
+    # Bookmarks persist across the tested upgrade, independently of Hold.
+    saved=api('/api/bookmarks?field=message&q='+token)['events']
+    if args.expect_token:
+        assert any(row['id']==anchor for row in saved),'Saved log lost during upgrade'
+    api('/api/bookmarks/'+str(anchor),'POST')
+    saved=api('/api/bookmarks?field=message&q='+token)['events']
+    assert any(row['id']==anchor and row['bookmarked'] for row in saved)
+    assert not any(row['id']==anchor for row in api('/api/anchors')['anchors'])
+    sources=api('/api/source-ips?seconds=0&q=198.51.100.20')['sources']
+    assert sources and sources[0]['event_count']>=2 and sources[0]['sample_count']<=20
+    assert sources[0]['risk_score']>=20
+    if not args.token_file:
+        api('/api/bookmarks/'+str(anchor),'DELETE')
+        assert not any(row['id']==anchor for row in api('/api/bookmarks?field=message&q='+token)['events'])
     with urllib.request.urlopen(base+'/rules.html',timeout=5) as response: assert '관제 룰셋' in response.read().decode()
     with urllib.request.urlopen(base+'/rules.js',timeout=5) as response: assert '/api/rules/preview' in response.read().decode()
     # A temporary rule exercises the same API used by the browser, then is removed.
