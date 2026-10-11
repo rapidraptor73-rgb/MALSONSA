@@ -1,0 +1,18 @@
+[Unit]
+Description=MALSONSA private DB-host position TXT resolver
+After=mariadb.service network-online.target
+[Service]
+User=root
+WorkingDirectory=/opt/malsonsa/backend
+Environment=SOC_CENTRAL_CONFIG=/etc/malsonsa/exporter.json
+Environment=SOC_ARCHIVE_ROOT=/var/lib/malsonsa/index
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/malsonsa/venv/bin/gunicorn --workers 1 --threads 4 --bind 203.230.52.183:8011 central_archive:app
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+[Install]
+WantedBy=multi-user.target

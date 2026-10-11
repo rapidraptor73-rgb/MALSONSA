@@ -1,4 +1,4 @@
-# MALSONSA v1.0 자동 구축
+# MALSONSA v1.1 자동 구축
 
 이 패키지는 운영 Flask SIEM, 화이트 대시보드, TCP/UDP rsyslog 수신기,
 SQLite DB, 로그 회전, Nginx와 두 systemd 서비스를 설치합니다.
@@ -14,8 +14,8 @@ SQLite DB, 로그 회전, Nginx와 두 systemd 서비스를 설치합니다.
 ## 빠른 설치
 
 ```bash
-tar -xzf malsonsa-v1.0.tar.gz
-cd malsonsa-v1.0
+tar -xzf malsonsa-v1.1.tar.gz
+cd malsonsa-v1.1
 sha256sum -c SHA256SUMS
 sudo bash install.sh --check
 sudo bash install.sh
@@ -41,7 +41,7 @@ sudo bash install.sh \
 
 HTTPS 인증서는 설치할 서버에서 제공해야 합니다. 인증서 개인키는 릴리스에 포함하지 않습니다.
 TLS를 지정하면 기본 웹 포트는 443이 됩니다. TLS 없이 설치하면 HTTP입니다.
-v1.0에는 사용자 로그인 기능이 없으므로 신뢰할 수 있는 관제망 또는 인증된 리버스 프록시에서 사용하세요.
+v1.1에는 사용자 로그인 기능이 없으므로 신뢰할 수 있는 관제망 또는 인증된 리버스 프록시에서 사용하세요.
 도메인의 DNS 등록과 인증서 발급은 이 설치 프로그램의 범위 밖입니다.
 
 외부 접속용 방화벽 규칙이 필요하면 이미 실행 중인 firewalld/ufw에 대해
@@ -93,7 +93,7 @@ Nginx/API, Hold/Similar, 업그레이드 후 DB 보존, 로그 회전을 검증�
 현재 운영 서버를 설치 테스트 대상으로 자동 재구축하지 않습니다.
 
 소스 변경은 feature → develop → main 검증 흐름을 유지합니다.
-v1.0 태그와 릴리스 아카이브는 검증된 main 커밋에서 생성합니다.
+v1.1 태그와 릴리스 아카이브는 검증된 main 커밋에서 생성합니다.
 
 설정 작성 시 참고한 공식 문서:
 [rsyslog 파일 출력과 회전](https://docs.rsyslog.com/doc/configuration/modules/omfile.html),

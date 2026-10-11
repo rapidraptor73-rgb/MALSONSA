@@ -6,6 +6,8 @@ import time
 import sqlite3
 import threading
 import ipaddress
+import bisect
+import heapq
 from datetime import datetime, timezone
 
 from flask import Flask, jsonify, request
@@ -49,22 +51,38 @@ def now_iso():
     return datetime.now(timezone.utc).astimezone().isoformat(timespec="microseconds")
 
 def db():
+    if os.environ.get('SOC_CENTRAL_CONFIG'):
+        return _central_module.Connection()
     c = sqlite3.connect(DB_PATH, timeout=20)
     c.row_factory = sqlite3.Row
+    c.create_function('soc_casefold', 1, lambda value: str(value or '').casefold())
     return c
 
 def table_exists(c, name):
+    if os.environ.get('SOC_CENTRAL_CONFIG'):
+        return c.exists(name)
     return c.execute(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
         (name,)
     ).fetchone() is not None
 
 def cols(c, table):
+    if os.environ.get('SOC_CENTRAL_CONFIG'):
+        return c.columns(table)
     if not table_exists(c, table):
         return []
     return [r["name"] for r in c.execute(f"PRAGMA table_info({table})").fetchall()]
 
 def ensure_schema():
+    if os.environ.get('SOC_CENTRAL_CONFIG'):
+        c = db()
+        try:
+            for name in ('events','raw_logs','analysis_results','soc_bookmarks','detection_rules'):
+                if not c.exists(name):
+                    raise RuntimeError('Central MariaDB schema is missing: '+name)
+        finally:
+            c.close()
+        return
     os.makedirs(APP_DIR, exist_ok=True)
     os.makedirs(STATE_DIR, exist_ok=True)
 
@@ -129,6 +147,13 @@ def ensure_schema():
             held_at TEXT NOT NULL
         )
         """)
+
+        c.execute('''CREATE TABLE IF NOT EXISTS soc_bookmarks(
+            event_id INTEGER PRIMARY KEY, saved_at TEXT NOT NULL, event_json TEXT NOT NULL,
+            host_ip TEXT, src_ip TEXT, dst_ip TEXT, user TEXT, program TEXT,
+            event TEXT, mitre TEXT, message TEXT)''')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_bookmarks_saved ON soc_bookmarks(saved_at DESC,event_id DESC)')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_bookmarks_host ON soc_bookmarks(host_ip)')
 
         c.execute("""
         CREATE TABLE IF NOT EXISTS monitored_hosts(
@@ -282,6 +307,14 @@ def parse_rsyslog_line(line):
 def insert_event(ev):
     c = db()
     try:
+        if os.environ.get('SOC_CENTRAL_CONFIG'):
+            # Only this WAS's own local logs may use the file ingestor.
+            own = os.environ.get('SOC_LOCAL_HOST_IP', '203.230.52.214')
+            if ev.get('host_ip') != own:
+                return
+            _central_module.insert_normalized(c, ev)
+            c.commit()
+            return
         # Preserve the original schema, including its required timestamp columns.
         values = {name: ev[name] for name in (
             "time", "host_ip", "hostname", "src_ip", "dst_ip", "event", "user",
@@ -412,6 +445,26 @@ def event_by_id(event_id):
     finally:
         c.close()
 
+
+def central_archive_reusable(c, payload, anchor, minimum, window):
+    """Reuse an index while newer, unrelated messages arrive on the same host."""
+    previous=payload.get('host_max_id')
+    if previous is None or payload.get('rules_version')!=_central_module.version(c):return False
+    where='host_ip=?' if anchor.get('host_ip') else "(host_ip IS NULL OR host_ip='')"
+    params=[anchor['host_ip']] if anchor.get('host_ip') else []
+    newer=[dict(row) for row in c.execute('SELECT id,time,host_ip,src_ip,dst_ip,user,event,mitre FROM events WHERE '+where+' AND id>? ORDER BY id DESC LIMIT 501',params+[previous])]
+    if len(newer)>500:return False
+    at=parse_time(anchor.get('time'))
+    if not at:return False
+    for candidate in newer:
+        instant=parse_time(candidate.get('time'))
+        if instant:
+            difference=abs((instant-at).total_seconds())
+            if difference<=window and similar_score(anchor,candidate,difference)[0]>=minimum:return False
+    floor=c.execute('SELECT id FROM events WHERE '+where+' ORDER BY id DESC LIMIT 1 OFFSET 4999',params).fetchone()
+    if floor and any(row['id']<floor['id'] for row in payload.get('similar',[])):return False
+    return True
+
 def sequence_bonus(a, b):
     chain = [
         ("SCAN", "AUTH_FAILURE"),
@@ -423,7 +476,7 @@ def sequence_bonus(a, b):
     ]
     return 30 if (a, b) in chain or (b, a) in chain else 0
 
-def similar_score(anchor, candidate):
+def similar_score(anchor, candidate, time_diff=None):
     score = 0
     reasons = []
 
@@ -437,9 +490,11 @@ def similar_score(anchor, candidate):
         score += 20
         reasons.append("same_user:+20")
 
-    at = parse_time(anchor.get("time"))
-    ct = parse_time(candidate.get("time"))
-    diff = abs((ct - at).total_seconds())
+    if time_diff is None:
+        at = parse_time(anchor.get("time"))
+        ct = parse_time(candidate.get("time"))
+        time_diff = abs((ct - at).total_seconds())
+    diff = time_diff
 
     if diff <= 300:
         score += 30
@@ -466,8 +521,124 @@ def similar_score(anchor, candidate):
 
     return score, reasons
 
+
+_risk_cache = {}
+_risk_lock = threading.Lock()
+RISK_FIELDS = ('id', 'time', 'host_ip', 'src_ip', 'dst_ip', 'user', 'event', 'mitre')
+
+
+def annotate_event_risk(events, c):
+    """Batch review priority without a Hold write or a request per event.
+
+    Fixed +/-60m window, >=60 similarity, same host plus SRC/account link.
+    At least one side must be suspicious. Summaries are bounded to the latest
+    5000 candidates and the strongest 500 matches, independently of UI filters.
+    Current rule points are added only for the event itself.
+    """
+    pool = [dict(row) for row in c.execute(
+        'SELECT ' + ','.join(RISK_FIELDS) + ' FROM events ORDER BY id DESC LIMIT 5000')]
+    signature = tuple(tuple(row.get(field) for field in RISK_FIELDS) for row in pool)
+    requested = tuple(tuple(row.get(field) for field in RISK_FIELDS) for row in events)
+    key = (signature, requested)
+    with _risk_lock:
+        cached = _risk_cache.get('value') if _risk_cache.get('key') == key else None
+    if cached is None:
+        indexed = {}
+        groups = {}
+        by_id = {row['id']: row for row in pool}
+        for row in pool:
+            stamp = risk_timestamp(row.get('time'))
+            if stamp is None:
+                continue
+            group = tuple(row.get(field) or '' for field in RISK_FIELDS[2:])
+            groups.setdefault(group, []).append((stamp, row['id']))
+            for field in ('src_ip', 'user'):
+                value = row.get(field)
+                if value:
+                    indexed.setdefault((row.get('host_ip') or '', field, value), set()).add(group)
+        for values in groups.values():
+            values.sort()
+        cached = {}
+        for event in events:
+            stamp = risk_timestamp(event.get('time'))
+            buckets = []
+            examples = []
+            if stamp is not None:
+                linked_groups = set()
+                for field in ('src_ip', 'user'):
+                    linked_groups.update(indexed.get((event.get('host_ip') or '', field, event.get(field)), ()))
+                for group in linked_groups:
+                    values = groups[group]
+                    other = by_id[values[0][1]]
+                    if event.get('event') not in SUSPICIOUS and other.get('event') not in SUSPICIOUS:
+                        continue
+                    # Equal fields have equal scores within each time tier. Count
+                    # them with bisection rather than scoring every repeated log.
+                    previous = None
+                    for radius, representative_diff in ((300, 0), (900, 301), (1800, 901), (3600, 1801)):
+                        start = bisect.bisect_left(values, (stamp - radius, -1))
+                        stop = bisect.bisect_right(values, (stamp + radius, float('inf')))
+                        ranges = [(start, stop)] if previous is None else [(start, previous[0]), (previous[1], stop)]
+                        previous = (start, stop)
+                        count = sum(end - begin for begin, end in ranges)
+                        if radius == 300 and event['id'] in by_id and tuple(event.get(field) or '' for field in RISK_FIELDS[2:]) == group:
+                            count -= 1
+                        if count <= 0:
+                            continue
+                        score, reasons = similar_score(event, other, representative_diff)
+                        if score >= 60:
+                            buckets.append((score, count))
+                            latest = heapq.nlargest(3, (event_id for begin, end in ranges
+                                for _, event_id in values[begin:end] if event_id != event['id']))
+                            examples.extend({'id': event_id, 'score': score, 'reasons': reasons,
+                                             'event': other.get('event'), 'time': by_id[event_id].get('time')}
+                                            for event_id in latest)
+            remaining = 500
+            total = 0
+            for score, count in sorted(buckets, reverse=True):
+                used = min(count, remaining)
+                total += score * used
+                remaining -= used
+                if not remaining:
+                    break
+            cached[event['id']] = {'related_score': total, 'related_count': 500 - remaining,
+                                  'matched_count': sum(count for _, count in buckets),
+                                  'examples': sorted(examples, key=lambda item: (-item['score'], -item['id']))[:3],
+                                  'time_valid': stamp is not None}
+        with _risk_lock:
+            _risk_cache.clear()
+            _risk_cache.update(key=key, value=cached)
+    for event in events:
+        classification = 20 if event.get('event') in SUSPICIOUS else 0
+        rule_points = event.get('detection_score', 0)
+        summary = dict(cached[event['id']])
+        summary.update(type_score=classification, rule_score=rule_points,
+                       self_score=classification + rule_points,
+                       total_score=classification + rule_points + summary['related_score'],
+                       minutes=60, min_score=60, candidate_limit=5000, related_limit=500,
+                       candidate_count=len(pool), scope='same_host_src_or_user', basis='review_priority')
+        event['risk_summary'] = summary
+    return events
+
+
+def risk_timestamp(value):
+    # parse_time() historically substitutes "now" for malformed values; automatic
+    # risk must not invent temporal relationships for a missing/broken timestamp.
+    try:
+        return datetime.fromisoformat(str(value).strip().replace('Z', '+00:00')).timestamp()
+    except (TypeError, ValueError, OverflowError, OSError):
+        return None
+
 @app.get("/api/health")
 def api_health():
+    if os.environ.get('SOC_CENTRAL_CONFIG'):
+        c = db()
+        try:
+            c.execute('SELECT 1')
+        finally:
+            c.close()
+        return jsonify(status='ok', storage='central-mariadb',
+                       db='central-mariadb', log='WAS-local-only', time=now_iso())
     return jsonify({
         "status": "ok",
         "db": DB_PATH,
@@ -486,6 +657,40 @@ def api_debug_db():
             "anchors_columns": cols(c, "anchors"),
             "hold_count": len(held_event_ids(c)),
         })
+    finally:
+        c.close()
+
+
+@app.get('/api/analysis')
+def api_analysis_index():
+    if not os.environ.get('SOC_CENTRAL_CONFIG'):
+        return jsonify(error='central storage is not enabled'), 409
+    where, args = [], []
+    for field in ('host_ip','src_ip','event','hour_key'):
+        value=request.args.get(field,'').strip()
+        if value:
+            where.append('a.'+field+'=?');args.append(value)
+    rule=request.args.get('rule_id')
+    join=''
+    try:
+        limit=max(1,min(int(request.args.get('limit',50)),200))
+        if rule:
+            join=' JOIN analysis_rule_index r ON r.event_id=a.event_id'
+            where.append('r.rule_id=?');args.append(int(rule))
+        before=request.args.get('before_id')
+        if before:
+            where.append('a.event_id<?');args.append(int(before))
+    except ValueError:
+        return jsonify(error='invalid numeric argument'),400
+    c=db()
+    try:
+        rows=c.execute('SELECT a.event_id,a.payload_json,a.analyzed_at,a.revision,a.exported_revision '
+            'FROM analysis_results a'+join+(' WHERE '+' AND '.join(where) if where else '')+
+            ' ORDER BY a.event_id DESC LIMIT ?',args+[limit]).fetchall()
+        return jsonify(results=[dict(event_id=row['event_id'],analysis=json.loads(row['payload_json']),
+            analyzed_at=row['analyzed_at'],revision=row['revision'],exported=row['revision']==row['exported_revision'])
+            for row in rows],next_before_id=rows[-1]['event_id'] if rows else None,
+            score_mode='saved_analysis_at_analyzed_at',server_time=now_iso())
     finally:
         c.close()
 
@@ -521,9 +726,152 @@ def api_events():
     try:
         rows = [dict(r) for r in c.execute(sql, args).fetchall()]
         held = held_event_ids(c)
+        saved = {r['event_id'] for r in c.execute('SELECT event_id FROM soc_bookmarks')}
         for r in rows:
             r["held"] = r["id"] in held
+            r['bookmarked'] = r['id'] in saved
+        rows = annotate_rules(rows)
+        if request.args.get('include_risk') == '1':
+            rows = annotate_event_risk(rows, c)
         return jsonify({"events": rows, "server_time": now_iso()})
+    finally:
+        c.close()
+
+
+def page_args():
+    try:
+        page = int(request.args.get('page', 1))
+        size = int(request.args.get('per_page', 50))
+        if not 1 <= page <= 1000000 or not 1 <= size <= 100:
+            raise ValueError()
+        return page, size
+    except (ValueError, TypeError):
+        raise ValueError('invalid pagination')
+
+
+def host_scope(where, args):
+    host = request.args.get('host_ip', '').strip()
+    if host == '__legacy__':
+        where.append("(host_ip IS NULL OR host_ip='')")
+    elif host:
+        where.append('host_ip=?')
+        args.append(host)
+
+
+@app.post('/api/bookmarks/<int:event_id>')
+def api_save_event(event_id):
+    c = db()
+    try:
+        event = rowdict(c.execute('SELECT * FROM events WHERE id=?', (event_id,)).fetchone())
+        if not event:
+            return jsonify(error='event not found'), 404
+        fields = ('host_ip', 'src_ip', 'dst_ip', 'user', 'program', 'event', 'mitre', 'message')
+        c.execute('INSERT OR IGNORE INTO soc_bookmarks(event_id,saved_at,event_json,' + ','.join(fields) +
+                  ') VALUES(' + ','.join('?' for _ in range(11)) + ')',
+                  (event_id, now_iso(), json.dumps(event, ensure_ascii=False)) + tuple(event.get(field) for field in fields))
+        c.commit()
+        return jsonify(ok=True, event_id=event_id, bookmarked=True)
+    finally:
+        c.close()
+
+
+@app.delete('/api/bookmarks/<int:event_id>')
+def api_unsave_event(event_id):
+    c = db()
+    try:
+        c.execute('DELETE FROM soc_bookmarks WHERE event_id=?', (event_id,))
+        c.commit()
+        return jsonify(ok=True, event_id=event_id, bookmarked=False)
+    finally:
+        c.close()
+
+
+@app.get('/api/bookmarks')
+def api_saved_events():
+    try:
+        page, size = page_args()
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+    field = request.args.get('field', 'message')
+    if field not in {'host_ip', 'src_ip', 'dst_ip', 'user', 'program', 'event', 'mitre', 'message'}:
+        return jsonify(error='invalid field'), 400
+    where, args = [], []
+    host_scope(where, args)
+    query = request.args.get('q', '').strip()
+    if query:
+        where.append(f"instr(soc_casefold(COALESCE({field},'')),soc_casefold(?))>0")
+        args.append(query)
+    clause = ' WHERE ' + ' AND '.join(where) if where else ''
+    c = db()
+    try:
+        total = c.execute('SELECT COUNT(*) FROM soc_bookmarks'+clause, args).fetchone()[0]
+        page = min(page, max(1, (total+size-1)//size))
+        stored = c.execute('SELECT * FROM soc_bookmarks'+clause+' ORDER BY saved_at DESC,event_id DESC LIMIT ? OFFSET ?',
+                           args+[size, (page-1)*size]).fetchall()
+        held = held_event_ids(c)
+        events = []
+        for saved in stored:
+            event = json.loads(saved['event_json'])
+            event.update(bookmarked=True, saved_at=saved['saved_at'], held=event['id'] in held,
+                         original_available=c.execute('SELECT 1 FROM events WHERE id=?', (event['id'],)).fetchone() is not None)
+            events.append(event)
+        events = annotate_event_risk(annotate_rules(events), c)
+        return jsonify(events=events, total=total, page=page, per_page=size, server_time=now_iso())
+    finally:
+        c.close()
+
+
+@app.get('/api/source-ips')
+def api_source_ips():
+    try:
+        page, size = page_args()
+        seconds = int(request.args.get('seconds', 300))
+        if seconds not in {0, 300, 900, 3600, 21600, 86400}:
+            raise ValueError('invalid time range')
+    except (ValueError, TypeError) as exc:
+        return jsonify(error=str(exc)), 400
+    where, args = [], []
+    host_scope(where, args)
+    if seconds:
+        now = datetime.now(timezone.utc).timestamp()
+        where.append('julianday(time) BETWEEN ? AND ?')
+        args.extend(((now-seconds)/86400+2440587.5, (now+60)/86400+2440587.5))
+    query = request.args.get('q', '').strip()
+    if query:
+        where.append("instr(COALESCE(src_ip,''),?)>0")
+        args.append(query)
+    base = ' WHERE ' + ' AND '.join(where) if where else ''
+    with_src = base + (' AND ' if where else ' WHERE ') + "src_ip IS NOT NULL AND src_ip<>''"
+    c = db()
+    try:
+        count = c.execute('SELECT COUNT(DISTINCT src_ip),COUNT(*) FROM events'+with_src, args).fetchone()
+        total = count[0]
+        page = min(page, max(1, (total+size-1)//size))
+        types = sorted(SUSPICIOUS)
+        sql = '''SELECT src_ip,COUNT(*) event_count,COUNT(DISTINCT COALESCE(NULLIF(host_ip,''),'__legacy__')) host_count,
+            MAX(julianday(time)) last_julian,
+            SUM(CASE WHEN event IN (''' + ','.join('?' for _ in types) + ''') THEN 1 ELSE 0 END) suspicious_count
+            FROM events''' + with_src + ' GROUP BY src_ip ORDER BY event_count DESC,src_ip LIMIT ? OFFSET ?'
+        sources = [dict(row) for row in c.execute(sql, types+args+[size,(page-1)*size])]
+        sample, grouped = [], {}
+        for source in sources:
+            rows = [dict(row) for row in c.execute('SELECT * FROM events'+with_src+' AND src_ip=? ORDER BY id DESC LIMIT 20',
+                                                  args+[source['src_ip']])]
+            grouped[source['src_ip']] = rows
+            sample.extend(rows)
+        annotate_event_risk(annotate_rules(sample), c)
+        for source in sources:
+            rows = grouped[source['src_ip']]
+            source['risk_score'] = max((row['risk_summary']['total_score'] for row in rows), default=None)
+            source['self_score'] = max((row['risk_summary']['self_score'] for row in rows), default=None)
+            source['sample_count'] = len(rows)
+            source['sample_limit'] = 20
+            source['critical_count'] = sum(row['risk_summary']['total_score'] >= 120 for row in rows)
+            source['attacks'] = sorted({hit['attack'] for row in rows for hit in row['detections']})[:5]
+            last = source.pop('last_julian')
+            source['last_seen'] = datetime.fromtimestamp((last-2440587.5)*86400,timezone.utc).isoformat() if last is not None else None
+        return jsonify(sources=sources, total=total, event_count=count[1], page=page, per_page=size,
+                       seconds=seconds, risk_basis='recent_20_events_max', server_time=now_iso())
     finally:
         c.close()
 
@@ -570,7 +918,7 @@ def api_search():
             x = dict(r)
             x["held"] = x["id"] in held
             out.append(x)
-        return jsonify({"events": out})
+        return jsonify({"events": annotate_rules(out)})
     finally:
         c.close()
 
@@ -585,7 +933,12 @@ def api_hold(event_id):
             (event_id, now_iso())
         )
         c.commit()
-        return jsonify({"ok":True,"event_id":event_id})
+        result={"ok":True,"event_id":event_id}
+        if os.environ.get('SOC_CENTRAL_CONFIG'):
+            stored=_central_module.read_archive(event_id)
+            result['archive']={'status':'ready','position':stored['position'],
+                               'tuple_count':len(stored['tuples'])} if stored else {'status':'pending'}
+        return jsonify(result)
     finally:
         c.close()
 
@@ -631,7 +984,7 @@ def api_anchors():
                 except Exception:
                     pass
                 out.append(x)
-        return jsonify({"anchors":out})
+        return jsonify({"anchors":annotate_rules(out)})
     finally:
         c.close()
 
@@ -648,8 +1001,28 @@ def api_similar(event_id):
 
     scope_host_ip = request.args.get("host_ip", "").strip()
 
+    if os.environ.get('SOC_CENTRAL_CONFIG') and not scope_host_ip:
+        scope_host_ip=anchor.get('host_ip') or '__legacy__'
+
     c = db()
     try:
+        if os.environ.get('SOC_CENTRAL_CONFIG') and min_score>=60 and minutes<=60:
+            stored=_central_module.read_archive(event_id)
+            if stored:
+                payload=stored['analysis']
+                matches_host=scope_host_ip==anchor.get('host_ip') or (scope_host_ip=='__legacy__' and not anchor.get('host_ip'))
+                if matches_host and central_archive_reusable(c,payload,anchor,min_score,window):
+                    selected=[row for row in payload.get('similar',[]) if row['similar_score']>=min_score and row['seconds']<=window]
+                    ids=[row['id'] for row in selected]
+                    rows={row['id']:dict(row) for row in c.execute('SELECT * FROM events WHERE id IN ('+','.join('?' for _ in ids)+')',ids)} if ids else {}
+                    out=[]
+                    for item in selected:
+                        if item['id'] in rows:
+                            candidate=rows[item['id']]
+                            candidate.update(similar_score=item['similar_score'],similar_reasons=item['similar_reasons'])
+                            out.append(candidate)
+                    return jsonify(anchor=annotate_rules([anchor])[0],min_score=min_score,minutes=minutes,
+                        similar=annotate_rules(out),lookup='position-txt',archive_position=stored['position'])
         if scope_host_ip == "__legacy__":
             candidates = [dict(r) for r in c.execute(
                 "SELECT * FROM events WHERE id<>? AND (host_ip IS NULL OR host_ip='') ORDER BY id DESC LIMIT 5000",
@@ -681,10 +1054,10 @@ def api_similar(event_id):
 
     out.sort(key=lambda x: (-x["similar_score"], -x["id"]))
     return jsonify({
-        "anchor": anchor,
+        "anchor": annotate_rules([anchor])[0],
         "min_score": min_score,
         "minutes": minutes,
-        "similar": out[:500]
+        "similar": annotate_rules(out[:500])
     })
 
 @app.get("/api/hosts")
@@ -782,6 +1155,8 @@ def api_update_host(host_id):
 def api_delete_host(host_id):
     c = db()
     try:
+        if c.execute("SELECT 1 FROM detection_rules WHERE host_id=? LIMIT 1", (host_id,)).fetchone():
+            return jsonify({"error":"연결된 관제 룰을 먼저 삭제하거나 다른 에이전트로 이동하세요."}), 409
         cur = c.execute("DELETE FROM monitored_hosts WHERE id=?", (host_id,))
         c.commit()
         if cur.rowcount == 0:
@@ -793,13 +1168,23 @@ def api_delete_host(host_id):
 _started = False
 def start_ingestor():
     global _started
+    if os.environ.get('SOC_DISABLE_INGESTOR') == '1':
+        return
     if _started:
         return
     _started = True
     t = threading.Thread(target=ingest_loop, daemon=True)
     t.start()
 
+import importlib.util
+_central_spec = importlib.util.spec_from_file_location('soc_central_store', os.path.join(os.path.dirname(__file__), 'central_store.py'))
+_central_module = importlib.util.module_from_spec(_central_spec)
+_central_spec.loader.exec_module(_central_module)
 ensure_schema()
+_rules_spec = importlib.util.spec_from_file_location('soc_detection_rules', os.path.join(os.path.dirname(__file__), 'detection_rules.py'))
+_rules_module = importlib.util.module_from_spec(_rules_spec)
+_rules_spec.loader.exec_module(_rules_module)
+annotate_rules = _rules_module.register_rules(app, db, now_iso)
 start_ingestor()
 
 if __name__ == "__main__":
