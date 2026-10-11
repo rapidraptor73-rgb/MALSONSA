@@ -5,6 +5,7 @@ import sqlite3
 from pathlib import Path
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 
@@ -67,6 +68,82 @@ class SiemIntegrationTests(unittest.TestCase):
         self.assertEqual(self.client.post('/api/hosts', json={'name': 'bad', 'ip': 'invalid'}).status_code, 400)
         self.add_event()
         self.assertEqual(self.client.get('/api/hosts').json['hosts'][0]['event_count'], 1)
+
+    def test_collection_risk_before_hold_and_independent_of_list_limit(self):
+        self.add_event('2026-10-10T15:00:00+09:00')
+        self.add_event('2026-10-10T15:01:00+09:00')
+        event = self.client.get('/api/events?include_risk=1&limit=1').json['events'][0]
+        risk = event['risk_summary']
+        self.assertFalse(event['held'])
+        self.assertEqual(self.client.get('/api/anchors').json['anchors'], [])
+        self.assertEqual((risk['self_score'], risk['related_score'], risk['total_score']), (20, 135, 155))
+        self.assertEqual(risk['related_count'], 1)
+        self.assertEqual(risk['examples'][0]['id'], 1)
+        self.assertNotIn('risk_summary', self.client.get('/api/events').json['events'][0])
+
+    def test_collection_risk_excludes_other_hosts_unlinked_and_invalid_times(self):
+        self.add_event('2026-10-10T15:00:00+09:00')
+        self.add_event('2026-10-10T15:01:00+09:00', '192.0.2.11')
+        self.add_event('2026-10-10T17:00:00+09:00')
+        self.add_event('2026-10-10T15:01:00+09:00')
+        with sqlite3.connect(self.module.DB_PATH) as c:
+            c.execute("UPDATE events SET src_ip='198.51.100.21', user='other' WHERE id=4")
+        c.close()
+        events = self.client.get('/api/events?include_risk=1').json['events']
+        self.assertTrue(all(event['risk_summary']['related_count'] == 0 for event in events))
+        self.add_event('2026-10-10T15:01:00+09:00')
+        event = self.client.get('/api/events?include_risk=1').json['events'][0]
+        self.assertEqual(event['risk_summary']['related_count'], 1)
+        with sqlite3.connect(self.module.DB_PATH) as c:
+            c.execute("UPDATE events SET time='broken' WHERE id=5")
+        c.close()
+        event = self.client.get('/api/events?include_risk=1').json['events'][0]
+        self.assertFalse(event['risk_summary']['time_valid'])
+        self.assertEqual(event['risk_summary']['related_score'], 0)
+
+    def test_collection_risk_reacts_to_rule_edits_and_does_not_promote_normal_bursts(self):
+        host = self.client.post('/api/hosts',json={'name':'agent','ip':'192.0.2.10'}).json['id']
+        self.add_event()
+        rule = self.client.post('/api/rules',json=self.rule(host,min_hits=1)).json['id']
+        risk = self.client.get('/api/events?include_risk=1').json['events'][0]['risk_summary']
+        self.assertEqual((risk['rule_score'], risk['self_score']), (120, 140))
+        self.client.patch('/api/rules/'+str(rule),json={'enabled':False})
+        self.assertEqual(self.client.get('/api/events?include_risk=1').json['events'][0]['risk_summary']['self_score'],20)
+        self.add_event()
+        with sqlite3.connect(self.module.DB_PATH) as c:
+            c.execute("UPDATE events SET event='LOG', mitre='' ")
+        c.close()
+        events = self.client.get('/api/events?include_risk=1').json['events']
+        self.assertTrue(all(event['risk_summary']['total_score'] == 0 for event in events))
+
+    def test_collection_risk_grouped_calculation_matches_individual_scores_at_boundaries(self):
+        base = datetime(2026,10,10,15,tzinfo=timezone.utc)
+        for seconds in (0, 300, 301, 900, 901, 1800, 1801, 3600, 3601, -300, -301):
+            self.add_event((base+timedelta(seconds=seconds)).isoformat())
+        response = self.client.get('/api/events?include_risk=1').json['events']
+        for event in response:
+            matches = []
+            for other in response:
+                difference = abs(self.module.risk_timestamp(event['time']) - self.module.risk_timestamp(other['time']))
+                if other['id'] == event['id'] or difference > 3600:
+                    continue
+                score, _ = self.module.similar_score(event, other)
+                if score >= 60:
+                    matches.append((score, other['id']))
+            matches.sort(reverse=True)
+            self.assertEqual(event['risk_summary']['related_score'], sum(score for score,_ in matches))
+            self.assertEqual(event['risk_summary']['related_count'], len(matches))
+            self.assertEqual([item['id'] for item in event['risk_summary']['examples']], [event_id for _,event_id in matches[:3]])
+        self.add_event(base.isoformat())
+        c = sqlite3.connect(self.module.DB_PATH)
+        fields = 'time,host_ip,src_ip,dst_ip,event,user,mitre,message'
+        for _ in range(510):
+            c.execute('INSERT INTO events('+fields+') SELECT '+fields+' FROM events WHERE id=12')
+        c.commit(); c.close()
+        risk = self.client.get('/api/events?limit=1&include_risk=1').json['events'][0]['risk_summary']
+        self.assertEqual(risk['related_count'], 500)
+        self.assertEqual(risk['related_score'], 500*135)
+        self.assertGreater(risk['matched_count'], risk['related_count'])
 
     def rule(self, agent_id, **changes):
         data = dict(host_id=agent_id, name='SSH 반복 실패', attack='SSH 무차별 대입',
