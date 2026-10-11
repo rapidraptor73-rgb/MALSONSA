@@ -101,3 +101,4 @@ jobs:
       - run: pnpm run build
       - run: node ../../tests/test_event_time.cjs
       - run: node ../../tests/test_risk_details.cjs
+      - run: node ../../tests/test_event_render.cjs
