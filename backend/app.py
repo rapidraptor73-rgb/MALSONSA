@@ -51,23 +51,38 @@ def now_iso():
     return datetime.now(timezone.utc).astimezone().isoformat(timespec="microseconds")
 
 def db():
+    if os.environ.get('SOC_CENTRAL_CONFIG'):
+        return _central_module.Connection()
     c = sqlite3.connect(DB_PATH, timeout=20)
     c.row_factory = sqlite3.Row
     c.create_function('soc_casefold', 1, lambda value: str(value or '').casefold())
     return c
 
 def table_exists(c, name):
+    if os.environ.get('SOC_CENTRAL_CONFIG'):
+        return c.exists(name)
     return c.execute(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
         (name,)
     ).fetchone() is not None
 
 def cols(c, table):
+    if os.environ.get('SOC_CENTRAL_CONFIG'):
+        return c.columns(table)
     if not table_exists(c, table):
         return []
     return [r["name"] for r in c.execute(f"PRAGMA table_info({table})").fetchall()]
 
 def ensure_schema():
+    if os.environ.get('SOC_CENTRAL_CONFIG'):
+        c = db()
+        try:
+            for name in ('events','raw_logs','analysis_results','soc_bookmarks','detection_rules'):
+                if not c.exists(name):
+                    raise RuntimeError('Central MariaDB schema is missing: '+name)
+        finally:
+            c.close()
+        return
     os.makedirs(APP_DIR, exist_ok=True)
     os.makedirs(STATE_DIR, exist_ok=True)
 
@@ -292,6 +307,14 @@ def parse_rsyslog_line(line):
 def insert_event(ev):
     c = db()
     try:
+        if os.environ.get('SOC_CENTRAL_CONFIG'):
+            # Only this WAS's own local logs may use the file ingestor.
+            own = os.environ.get('SOC_LOCAL_HOST_IP', '203.230.52.214')
+            if ev.get('host_ip') != own:
+                return
+            _central_module.insert_normalized(c, ev)
+            c.commit()
+            return
         # Preserve the original schema, including its required timestamp columns.
         values = {name: ev[name] for name in (
             "time", "host_ip", "hostname", "src_ip", "dst_ip", "event", "user",
@@ -588,6 +611,14 @@ def risk_timestamp(value):
 
 @app.get("/api/health")
 def api_health():
+    if os.environ.get('SOC_CENTRAL_CONFIG'):
+        c = db()
+        try:
+            c.execute('SELECT 1')
+        finally:
+            c.close()
+        return jsonify(status='ok', storage='central-mariadb',
+                       db='central-mariadb', log='WAS-local-only', time=now_iso())
     return jsonify({
         "status": "ok",
         "db": DB_PATH,
@@ -606,6 +637,40 @@ def api_debug_db():
             "anchors_columns": cols(c, "anchors"),
             "hold_count": len(held_event_ids(c)),
         })
+    finally:
+        c.close()
+
+
+@app.get('/api/analysis')
+def api_analysis_index():
+    if not os.environ.get('SOC_CENTRAL_CONFIG'):
+        return jsonify(error='central storage is not enabled'), 409
+    where, args = [], []
+    for field in ('host_ip','src_ip','event','hour_key'):
+        value=request.args.get(field,'').strip()
+        if value:
+            where.append('a.'+field+'=?');args.append(value)
+    rule=request.args.get('rule_id')
+    join=''
+    try:
+        limit=max(1,min(int(request.args.get('limit',50)),200))
+        if rule:
+            join=' JOIN analysis_rule_index r ON r.event_id=a.event_id'
+            where.append('r.rule_id=?');args.append(int(rule))
+        before=request.args.get('before_id')
+        if before:
+            where.append('a.event_id<?');args.append(int(before))
+    except ValueError:
+        return jsonify(error='invalid numeric argument'),400
+    c=db()
+    try:
+        rows=c.execute('SELECT a.event_id,a.payload_json,a.analyzed_at,a.revision,a.exported_revision '
+            'FROM analysis_results a'+join+(' WHERE '+' AND '.join(where) if where else '')+
+            ' ORDER BY a.event_id DESC LIMIT ?',args+[limit]).fetchall()
+        return jsonify(results=[dict(event_id=row['event_id'],analysis=json.loads(row['payload_json']),
+            analyzed_at=row['analyzed_at'],revision=row['revision'],exported=row['revision']==row['exported_revision'])
+            for row in rows],next_before_id=rows[-1]['event_id'] if rows else None,
+            score_mode='saved_analysis_at_analyzed_at',server_time=now_iso())
     finally:
         c.close()
 
@@ -848,7 +913,12 @@ def api_hold(event_id):
             (event_id, now_iso())
         )
         c.commit()
-        return jsonify({"ok":True,"event_id":event_id})
+        result={"ok":True,"event_id":event_id}
+        if os.environ.get('SOC_CENTRAL_CONFIG'):
+            stored=_central_module.read_archive(event_id)
+            result['archive']={'status':'ready','position':stored['position'],
+                               'tuple_count':len(stored['tuples'])} if stored else {'status':'pending'}
+        return jsonify(result)
     finally:
         c.close()
 
@@ -911,8 +981,30 @@ def api_similar(event_id):
 
     scope_host_ip = request.args.get("host_ip", "").strip()
 
+    if os.environ.get('SOC_CENTRAL_CONFIG') and not scope_host_ip:
+        scope_host_ip=anchor.get('host_ip') or '__legacy__'
+
     c = db()
     try:
+        if os.environ.get('SOC_CENTRAL_CONFIG') and min_score>=60 and minutes<=60:
+            stored=_central_module.read_archive(event_id)
+            if stored:
+                payload=stored['analysis']
+                maximum=(c.execute('SELECT MAX(id) FROM events WHERE host_ip=?',(anchor['host_ip'],)).fetchone()[0] if anchor.get('host_ip') else
+                         c.execute("SELECT MAX(id) FROM events WHERE host_ip IS NULL OR host_ip=''").fetchone()[0])
+                matches_host=scope_host_ip==anchor.get('host_ip') or (scope_host_ip=='__legacy__' and not anchor.get('host_ip'))
+                if payload.get('host_max_id')==maximum and payload.get('rules_version')==_central_module.version(c) and matches_host:
+                    selected=[row for row in payload.get('similar',[]) if row['similar_score']>=min_score and row['seconds']<=window]
+                    ids=[row['id'] for row in selected]
+                    rows={row['id']:dict(row) for row in c.execute('SELECT * FROM events WHERE id IN ('+','.join('?' for _ in ids)+')',ids)} if ids else {}
+                    out=[]
+                    for item in selected:
+                        if item['id'] in rows:
+                            candidate=rows[item['id']]
+                            candidate.update(similar_score=item['similar_score'],similar_reasons=item['similar_reasons'])
+                            out.append(candidate)
+                    return jsonify(anchor=annotate_rules([anchor])[0],min_score=min_score,minutes=minutes,
+                        similar=annotate_rules(out),lookup='position-txt',archive_position=stored['position'])
         if scope_host_ip == "__legacy__":
             candidates = [dict(r) for r in c.execute(
                 "SELECT * FROM events WHERE id<>? AND (host_ip IS NULL OR host_ip='') ORDER BY id DESC LIMIT 5000",
@@ -1058,14 +1150,19 @@ def api_delete_host(host_id):
 _started = False
 def start_ingestor():
     global _started
+    if os.environ.get('SOC_DISABLE_INGESTOR') == '1':
+        return
     if _started:
         return
     _started = True
     t = threading.Thread(target=ingest_loop, daemon=True)
     t.start()
 
-ensure_schema()
 import importlib.util
+_central_spec = importlib.util.spec_from_file_location('soc_central_store', os.path.join(os.path.dirname(__file__), 'central_store.py'))
+_central_module = importlib.util.module_from_spec(_central_spec)
+_central_spec.loader.exec_module(_central_module)
+ensure_schema()
 _rules_spec = importlib.util.spec_from_file_location('soc_detection_rules', os.path.join(os.path.dirname(__file__), 'detection_rules.py'))
 _rules_module = importlib.util.module_from_spec(_rules_spec)
 _rules_spec.loader.exec_module(_rules_module)
