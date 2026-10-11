@@ -10,6 +10,7 @@ Object.defineProperty(body,'innerHTML',{set(value){writes++;error=false;this.con
 const context=vm.createContext({
   allEvents:[{id:1,time:'2026-10-11T00:00:00Z',event:'AUTH_FAILURE'}],
   previousRenderKey:null,previousNewestId:null,eventsBody:body,
+  activeView:'logs',
   eventCount:{},apiLoaded:{},badTimeCount:{},lastReceived:{},lastAge:{},
   parseTime:value=>new Date(value),eventTime:event=>event.time,sortNewest:()=>0,
   ageText:()=> '지금',displayTime:()=> '00:00:00',esc:value=>String(value??''),

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>PSC SOC - Rsyslog Correlation</title>
-<link rel="stylesheet" href="/theme.css?v=20261011-risk">
+<link rel="stylesheet" href="/theme.css?v=20261011-bookmarks">
 <script src="/site-config.js?v=1.0"></script>
 </head>
 <body>
@@ -14,12 +14,17 @@
 </header>
 
 <main>
+  <div class="tabs view-tabs" role="tablist" aria-label="상관분석 보기">
+    <button id="viewLogs" role="tab" class="tab active" aria-selected="true" aria-controls="logsPanel" onclick="selectView('logs')">수집 로그</button>
+    <button id="viewSaved" role="tab" class="tab" aria-selected="false" aria-controls="logsPanel" onclick="selectView('saved')">★ 저장한 로그</button>
+    <button id="viewSources" role="tab" class="tab" aria-selected="false" aria-controls="sourcesPanel" onclick="selectView('sources')">SRC IP 위험도</button>
+  </div>
   <div id="hostTabs" class="tabs"></div>
 
   <div class="toolbar">
     <button class="primary" onclick="refreshAll()">↻ 로그 새로고침</button>
 
-    <select id="timeRange" aria-label="로그 조회 기간" onchange="renderEvents()">
+    <select id="timeRange" aria-label="로그 조회 기간" onchange="filtersChanged()">
       <option value="300" selected>최근 5분</option>
       <option value="900">최근 15분</option>
       <option value="3600">최근 1시간</option>
@@ -28,7 +33,7 @@
       <option value="0">전체</option>
     </select>
 
-    <select id="field" aria-label="검색 필드">
+    <select id="field" aria-label="검색 필드" onchange="filtersChanged()">
       <option value="src_ip">SRC IP</option>
       <option value="dst_ip">DST IP</option>
       <option value="host_ip">HOST IP</option>
@@ -39,21 +44,24 @@
       <option value="message">MESSAGE</option>
     </select>
 
-    <input id="q" aria-label="로그 검색" placeholder="IP, 사용자 또는 메시지 검색" oninput="renderEvents()">
+    <input id="q" aria-label="로그 검색" placeholder="IP, 사용자 또는 메시지 검색" oninput="filtersChanged()">
     <label><input id="autoRefresh" type="checkbox" checked> 자동 새로고침(3초)</label>
     <select id="detectionFilter" aria-label="수집 로그 위험도 필터" onchange="renderEvents()"><option value="all">전체 로그</option><option value="matched">룰 탐지 로그만</option><option value="critical">종합 Critical ≥120</option><option value="high">종합 High 90–119</option><option value="medium">종합 Medium 60–89</option><option value="low">종합 Low 0–59</option></select>
     <span style="margin-left:auto" id="currentView">현재 보기: 전체 관제 대상</span>
   </div>
+  <div id="viewNotice" class="legend" aria-live="polite"></div>
+  <div id="saveStatus" class="action-status" role="status"></div>
 
   <div class="statusbar">
-    <span>정렬: <b>최신 TIME → 과거</b></span>
+    <span>정렬: <b id="sortNote">최신 TIME → 과거</b></span>
     <span>API 로드: <b id="apiLoaded">0</b>건 / 시간 파싱 실패: <b id="badTimeCount">0</b>건</span>
     <span>마지막 수집: <b id="lastReceived">-</b></span>
     <span>서버 시각과 차이: <b id="lastAge">-</b></span>
   </div>
 
-  <section class="panel">
-    <div class="title">수집 로그 <span id="eventCount" class="count">0</span><small>상세 보기 전에도 자체 점수와 연관 로그 합계로 검토 우선순위를 표시합니다.</small></div>
+  <section class="panel" id="logsPanel">
+    <div class="title"><span id="logsTitle">수집 로그</span> <span id="eventCount" class="count">0</span><small id="logsHint">상세 보기 전에도 자체 점수와 연관 로그 합계로 검토 우선순위를 표시합니다.</small></div>
+    <div id="savedPager" class="list-pager" hidden><button id="savedPrev" onclick="changeSavedPage(-1)">이전</button><span id="savedPageInfo"></span><button id="savedNext" onclick="changeSavedPage(1)">다음</button></div>
     <p class="collection-legend">위험도 = 로그 자체(의심 유형 20점 + 일치 룰 점수) + 연관 상관점수 합계. 같은 호스트의 SRC·계정 연결을 전후 60분에서 평가합니다. Critical ≥120 · High 90–119 · Medium 60–89 · Low 0–59. 상세 보기는 개별 연관 근거를 확인하는 기능입니다.</p>
     <div class="scroll">
       <table class="collection-table">
@@ -66,6 +74,14 @@
     </div>
   </section>
 
+  <section id="sourcesPanel" class="panel" hidden>
+    <div class="title">SRC IP 위험도 <span id="sourceCount" class="count">0</span><small>선택 기간·호스트의 전체 DB 로그에서 수집 건수가 많은 순서로 표시합니다.</small></div>
+    <p class="collection-legend">IP 위험도는 해당 IP의 최근 수집 로그 최대 20건 중 가장 높은 종합 검토 점수입니다. 수집 건수는 선택 범위 전체를 집계합니다. 연관 점수는 기존 전후 60분 기준이며, IP 위험도는 공격 확정이나 IP 평판 조회 결과가 아닙니다.</p>
+    <div class="list-pager"><button id="sourcePrev" onclick="changeSourcePage(-1)">이전</button><span id="sourcePageInfo"></span><button id="sourceNext" onclick="changeSourcePage(1)">다음</button></div>
+    <div class="scroll"><table class="source-table"><thead><tr><th>순위 / 출발지 SRC</th><th>수집 건수</th><th>IP 위험도</th><th>의심 유형 / 호스트</th><th>마지막 발생 시각</th><th>확인</th></tr></thead><tbody id="sourcesBody"></tbody></table></div>
+  </section>
+
+  <div id="correlationDetails">
   <section class="panel">
     <div class="title">선택한 앵커 로그 <small>이 로그와 다른 로그를 비교하여 상관점수를 산정합니다.</small></div>
     <div id="anchorBox" class="kvgrid"><span class="muted">HOLD/VIEW한 이벤트를 선택하세요.</span></div>
@@ -98,6 +114,7 @@
       </table>
     </div>
   </section>
+  </div>
 </main>
 
 <script src="/risk-details.js?v=20261011-risk"></script>
@@ -114,6 +131,15 @@ let similarEvents=[];
 let currentAnchor=null;
 let refreshBusy=false;
 let previousRenderKey=null;
+let activeView='logs';
+let savedEvents=[];
+let savedPage=1;
+let sourcePage=1;
+let previousSourceKey=null;
+let viewRequest=0;
+let filterTimer=null;
+let sourceScope='';
+const savingIds=new Set();
 
 /*
  * Python datetime.isoformat() can emit microseconds:
@@ -219,6 +245,7 @@ function sortNewest(a,b){
 }
 
 function filteredEvents(){
+  if(activeView==='saved') return savedEvents;
   const detectionFilter=document.getElementById('detectionFilter').value;
   return allEvents
     .filter(e=>hostMatches(e) && timeMatches(e) && searchMatches(e))
@@ -262,23 +289,26 @@ function selectHost(v){
     currentView.textContent=`현재 보기: ${h?h.name:v} (${v})`;
   }
   renderTabs();
-  renderEvents();
+  if(activeView==='logs') renderEvents();
+  else {savedPage=1;sourcePage=1;loadActiveView();}
   if(anchorId) loadSimilar();
 }
 
 function renderEvents(){
+  if(activeView==='sources') return;
   const rows=filteredEvents();
+  const loaded=activeView==='saved'?savedEvents:allEvents;
   eventCount.textContent=rows.length;
-  apiLoaded.textContent=allEvents.length;
-  badTimeCount.textContent=allEvents.filter(e=>!parseTime(eventTime(e))).length;
+  apiLoaded.textContent=loaded.length;
+  badTimeCount.textContent=loaded.filter(e=>!parseTime(eventTime(e))).length;
 
-  const validByTime=[...allEvents].filter(e=>parseTime(eventTime(e))).sort(sortNewest);
+  const validByTime=[...loaded].filter(e=>parseTime(eventTime(e))).sort(sortNewest);
   const newest=validByTime[0] || rows[0];
 
   lastReceived.textContent=newest ? eventTime(newest) : '-';
   lastAge.textContent=newest ? ageText(eventTime(newest)) : '-';
 
-  const renderKey=JSON.stringify(rows);
+  const renderKey=activeView+JSON.stringify(rows);
   if(renderKey===previousRenderKey && !eventsBody.querySelector('.empty-state,td.bad[colspan]')){
     eventsBody.querySelectorAll('[data-age]').forEach(element=>{element.textContent=ageText(element.dataset.age);});
     return;
@@ -290,7 +320,7 @@ function renderEvents(){
     const isNew=previousNewestId!==null && Number(e.id)>previousNewestId;
     const badTime=!parseTime(eventTime(e));
     return `<tr data-event-id="${Number(e.id)}" class="${isNew?'newrow':''}">
-      <td>${e.held?'<span class="hold">● HOLD</span><br>':''}<button onclick="viewEvent(${Number(e.id)})">상세 보기</button></td>
+      <td>${e.held?'<span class="hold">● HOLD</span><br>':''}<button onclick="viewEvent(${Number(e.id)})" ${e.original_available===false?'disabled':''}>상세 보기</button><button class="bookmark-btn ${e.bookmarked?'saved':''}" aria-pressed="${Boolean(e.bookmarked)}" aria-label="${e.bookmarked?'저장 해제':'로그 저장'} ${Number(e.id)}" onclick="toggleBookmark(${Number(e.id)})">${e.bookmarked?'★ 저장됨':'☆ 저장'}</button>${e.saved_at?`<span class="subtext">저장 ${esc(displayTime({time:e.saved_at}))}</span>`:''}${e.original_available===false?'<span class="subtext">원본 없이 저장 사본 보관 중</span>':''}</td>
       <td class="event-risk-cell">${SiemRisk.eventRiskHtml(e)}</td>
       <td class="${badTime?'bad':''}"><span class="mono" title="${esc(eventTime(e))}">${esc(displayTime(e))}</span><span class="subtext" data-age="${esc(eventTime(e))}">${esc(ageText(eventTime(e)))}</span></td>
       <td class="mono">${esc(e.host_ip||'-')}</td>
@@ -302,11 +332,136 @@ function renderEvents(){
     </tr>`;
   }).join('');
   restoreDetails(eventsBody,opened);
-  if(!rows.length) eventsBody.innerHTML='<tr><td colspan="9" class="empty-state">현재 조회 조건에 맞는 로그가 없습니다. 조회 기간이나 검색어를 조정하세요.</td></tr>';
+  if(!rows.length) eventsBody.innerHTML=`<tr><td colspan="9" class="empty-state">${activeView==='saved'?'저장한 로그가 없거나 호스트·검색 조건과 일치하지 않습니다. 수집 로그에서 ☆ 저장을 눌러 보관하세요.':'현재 조회 조건에 맞는 로그가 없습니다. 조회 기간이나 검색어를 조정하세요.'}</td></tr>`;
 
   if(allEvents.length){
     previousNewestId=Math.max(...allEvents.map(x=>Number(x.id)||0));
   }
+}
+
+function scopeParams(){
+  const params=new URLSearchParams({page:String(activeView==='saved'?savedPage:sourcePage),per_page:'50',_ :String(Date.now())});
+  if(selectedHost!=='ALL') params.set('host_ip',selectedHost==='LEGACY'?'__legacy__':selectedHost);
+  params.set('q',document.getElementById('q').value.trim());
+  return params;
+}
+
+async function selectView(view){
+  activeView=view;
+  if(view==='logs' && sourceScope && (document.getElementById('q').value.trim()!==sourceScope || document.getElementById('field').value!=='src_ip')) sourceScope='';
+  previousRenderKey=null;
+  for(const [key,id] of [['logs','viewLogs'],['saved','viewSaved'],['sources','viewSources']]){
+    const button=document.getElementById(id);
+    button.classList.toggle('active',key===view);
+    button.setAttribute('aria-selected',String(key===view));
+  }
+  document.getElementById('logsPanel').hidden=view==='sources';
+  document.getElementById('sourcesPanel').hidden=view!=='sources';
+  document.getElementById('correlationDetails').hidden=view==='sources';
+  document.getElementById('savedPager').hidden=view!=='saved';
+  document.getElementById('timeRange').disabled=view==='saved';
+  document.getElementById('detectionFilter').disabled=view!=='logs';
+  document.getElementById('field').disabled=view==='sources';
+  document.getElementById('sortNote').textContent=view==='saved'?'최근 저장 → 과거 저장':view==='sources'?'수집 건수 높은 순':'최신 TIME → 과거';
+  document.getElementById('logsTitle').textContent=view==='saved'?'저장한 로그':'수집 로그';
+  document.getElementById('logsHint').textContent=view==='saved'?'이 SIEM에 저장한 로그와 사본을 보관합니다. 저장 해제는 원본 로그를 삭제하지 않습니다.':'상세 보기 전에도 자체 점수와 연관 로그 합계로 검토 우선순위를 표시합니다.';
+  document.getElementById('q').placeholder=view==='sources'?'SRC IP 검색':'IP, 사용자 또는 메시지 검색';
+  document.getElementById('viewNotice').textContent=view==='saved'?'저장한 로그는 조회 기간·위험도 필터와 무관하게 표시합니다. 호스트와 검색 조건은 적용됩니다.':view==='sources'?'수집 건수는 DB 전체의 선택 범위이며, IP 위험도는 최근 수집 최대 20건의 최고 점수입니다.':sourceScope?`SRC ${sourceScope}의 로그를 조회 중입니다. 검색어를 지우면 전체 수집 목록으로 돌아갑니다.`:'';
+  if(view==='sources') document.getElementById('q').value='';
+  const target=view==='sources'?document.getElementById('sourcesBody'):eventsBody;
+  target.innerHTML=`<tr><td colspan="${view==='sources'?6:9}" class="empty-state">조회 중…</td></tr>`;
+  previousSourceKey=null;
+  await loadActiveView();
+}
+
+function filtersChanged(){
+  if(activeView==='logs'){
+    if(sourceScope && (document.getElementById('q').value.trim()!==sourceScope || document.getElementById('field').value!=='src_ip')){
+      sourceScope='';document.getElementById('viewNotice').textContent='';loadActiveView();
+    }
+    renderEvents();return;
+  }
+  clearTimeout(filterTimer);
+  ++viewRequest;
+  savedPage=1;sourcePage=1;
+  filterTimer=setTimeout(()=>loadActiveView(),250);
+}
+
+function updatePager(kind,data){
+  const pages=Math.max(1,Math.ceil(data.total/data.per_page));
+  document.getElementById(kind+'PageInfo').textContent=`${data.page} / ${pages}페이지 · 전체 ${data.total}개`;
+  document.getElementById(kind+'Prev').disabled=data.page<=1;
+  document.getElementById(kind+'Next').disabled=data.page>=pages;
+}
+
+async function changeSavedPage(delta){savedPage=Math.max(1,savedPage+delta);await loadActiveView();}
+async function changeSourcePage(delta){sourcePage=Math.max(1,sourcePage+delta);await loadActiveView();}
+
+async function loadActiveView(){
+  const token=++viewRequest;
+  if(activeView==='logs') return loadEvents(token);
+  const view=activeView,started=Date.now(),params=scopeParams();
+  if(view==='saved') params.set('field',document.getElementById('field').value);
+  else params.set('seconds',document.getElementById('timeRange').value);
+  const target=view==='saved'?eventsBody:document.getElementById('sourcesBody');
+  try{
+    const response=await fetch('/api/'+(view==='saved'?'bookmarks':'source-ips')+'?'+params,{cache:'no-store'});
+    if(!response.ok) throw new Error('HTTP '+response.status);
+    const result=await response.json();
+    if(token!==viewRequest || activeView!==view) return;
+    updateServerClock(result.server_time,started,Date.now());
+    if(view==='saved'){
+      savedEvents=result.events||[];savedPage=result.page;
+      updatePager('saved',result);renderEvents();
+    }else{
+      sourcePage=result.page;updatePager('source',result);
+      document.getElementById('sourceCount').textContent=result.total;
+      apiLoaded.textContent=result.event_count;badTimeCount.textContent='—';lastReceived.textContent='IP 목록별 확인';lastAge.textContent='—';
+      renderSources(result);
+    }
+  }catch(error){
+    if(token!==viewRequest || activeView!==view) return;
+    target.innerHTML=`<tr><td colspan="${view==='saved'?9:6}" class="bad">조회 실패: ${esc(error.message)}</td></tr>`;
+  }
+}
+
+function renderSources(result){
+  const body=document.getElementById('sourcesBody');
+  const key=JSON.stringify(result.sources)+result.page;
+  if(previousSourceKey===key && !body.querySelector('td.bad[colspan]')) return;
+  previousSourceKey=key;
+  body.innerHTML=(result.sources||[]).map((source,index)=>`<tr>
+    <td><span class="subtext">${(result.page-1)*result.per_page+index+1}위</span><b class="mono">${esc(source.src_ip)}</b></td>
+    <td><strong class="source-hits">${esc(source.event_count)}건</strong><span class="subtext">선택 기간·호스트 전체</span></td>
+    <td>${SiemRisk.scoreBadge(source.risk_score)}<span class="subtext">최근 ${esc(source.sample_count)}건 최고 점수</span><span class="subtext">자체 최고 ${esc(source.self_score)}점 · 분석 중 Critical ${esc(source.critical_count)}건</span></td>
+    <td>의심 유형 ${esc(source.suspicious_count)}건 · 호스트 ${esc(source.host_count)}개<span class="subtext">${source.attacks.length?source.attacks.map(esc).join(' · '):'분석 로그에서 일치 룰 없음'}</span></td>
+    <td class="mono">${esc(displayTime({time:source.last_seen}))}<span class="subtext">${esc(ageText(source.last_seen))}</span></td>
+    <td><button class="source-drill" data-src-ip="${esc(source.src_ip)}">이 IP 로그 보기</button></td></tr>`).join('') || '<tr><td colspan="6" class="empty-state">선택한 기간·호스트에서 SRC IP가 있는 로그가 없습니다.</td></tr>';
+  body.querySelectorAll('.source-drill').forEach(button=>{button.onclick=()=>viewSource(button.dataset.srcIp);});
+}
+
+async function viewSource(ip){
+  sourceScope=ip;
+  document.getElementById('field').value='src_ip';
+  document.getElementById('q').value=ip;
+  await selectView('logs');
+}
+
+async function toggleBookmark(id){
+  if(savingIds.has(id)) return;
+  const event=(activeView==='saved'?savedEvents:allEvents).find(row=>Number(row.id)===id);
+  if(!event) return;
+  savingIds.add(id);
+  const status=document.getElementById('saveStatus');
+  try{
+    const response=await fetch('/api/bookmarks/'+id,{method:event.bookmarked?'DELETE':'POST'});
+    if(!response.ok) throw new Error('HTTP '+response.status);
+    const result=await response.json();
+    for(const row of [...allEvents,...savedEvents]) if(Number(row.id)===id) row.bookmarked=result.bookmarked;
+    status.textContent=result.bookmarked?'로그를 저장했습니다. 저장한 로그 탭에서 확인하세요.':'저장을 해제했습니다. 원본 로그는 유지됩니다.';
+    if(activeView==='saved') await loadActiveView();else renderEvents();
+  }catch(error){status.textContent='저장 상태 변경 실패: '+error.message;}
+  finally{savingIds.delete(id);}
 }
 
 async function loadHosts(){
@@ -317,20 +472,25 @@ async function loadHosts(){
   }catch(e){hosts=[];}
 }
 
-async function loadEvents(){
+async function loadEvents(token=++viewRequest){
   try{
     const requestStarted=Date.now();
-    const r=await fetch('/api/events?limit=1000&include_risk=1&_='+Date.now(),{cache:'no-store'});
+    const params=new URLSearchParams({limit:'1000',include_risk:'1',_ :String(Date.now())});
+    if(sourceScope) params.set('src_ip',sourceScope);
+    const r=await fetch('/api/events?'+params,{cache:'no-store'});
+    if(token!==viewRequest||activeView!=='logs') return;
     if(!r.ok){
       eventsBody.innerHTML=`<tr><td colspan="9" class="bad">/api/events 오류: HTTP ${r.status}</td></tr>`;
       return;
     }
     const j=await r.json();
+    if(token!==viewRequest||activeView!=='logs') return;
     updateServerClock(j.server_time, requestStarted, Date.now());
     allEvents=j.events||[];
     renderTabs();
     renderEvents();
   }catch(e){
+    if(token!==viewRequest||activeView!=='logs') return;
     eventsBody.innerHTML=`<tr><td colspan="9" class="bad">API 요청 실패: ${esc(e.message)}</td></tr>`;
   }
 }
@@ -340,13 +500,13 @@ async function refreshAll(){
   refreshBusy=true;
   try{
     await loadHosts();
-    await loadEvents();
-    if(anchorId) await loadSimilar();
+    await loadActiveView();
+    if(anchorId && activeView!=='sources') await loadSimilar();
   }finally{refreshBusy=false;}
 }
 
 async function viewEvent(id){
-  const e=allEvents.find(x=>Number(x.id)===Number(id));
+  const e=(activeView==='saved'?savedEvents:allEvents).find(x=>Number(x.id)===Number(id));
   if(!e)return;
 
   anchorId=id;
@@ -368,12 +528,12 @@ async function viewEvent(id){
 
 async function hold(id){
   await fetch('/api/anchors/'+id+'/hold',{method:'POST'});
-  await loadEvents(); await viewEvent(id);
+  await loadActiveView(); await viewEvent(id);
 }
 
 async function unhold(id){
   await fetch('/api/anchors/'+id,{method:'DELETE'});
-  await loadEvents(); await viewEvent(id);
+  await loadActiveView(); await viewEvent(id);
 }
 
 async function loadSimilar(){

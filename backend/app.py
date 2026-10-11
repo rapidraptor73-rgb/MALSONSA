@@ -133,6 +133,13 @@ def ensure_schema():
         )
         """)
 
+        c.execute('''CREATE TABLE IF NOT EXISTS soc_bookmarks(
+            event_id INTEGER PRIMARY KEY, saved_at TEXT NOT NULL, event_json TEXT NOT NULL,
+            host_ip TEXT, src_ip TEXT, dst_ip TEXT, user TEXT, program TEXT,
+            event TEXT, mitre TEXT, message TEXT)''')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_bookmarks_saved ON soc_bookmarks(saved_at DESC,event_id DESC)')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_bookmarks_host ON soc_bookmarks(host_ip)')
+
         c.execute("""
         CREATE TABLE IF NOT EXISTS monitored_hosts(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -634,12 +641,152 @@ def api_events():
     try:
         rows = [dict(r) for r in c.execute(sql, args).fetchall()]
         held = held_event_ids(c)
+        saved = {r['event_id'] for r in c.execute('SELECT event_id FROM soc_bookmarks')}
         for r in rows:
             r["held"] = r["id"] in held
+            r['bookmarked'] = r['id'] in saved
         rows = annotate_rules(rows)
         if request.args.get('include_risk') == '1':
             rows = annotate_event_risk(rows, c)
         return jsonify({"events": rows, "server_time": now_iso()})
+    finally:
+        c.close()
+
+
+def page_args():
+    try:
+        page = int(request.args.get('page', 1))
+        size = int(request.args.get('per_page', 50))
+        if not 1 <= page <= 1000000 or not 1 <= size <= 100:
+            raise ValueError()
+        return page, size
+    except (ValueError, TypeError):
+        raise ValueError('invalid pagination')
+
+
+def host_scope(where, args):
+    host = request.args.get('host_ip', '').strip()
+    if host == '__legacy__':
+        where.append("(host_ip IS NULL OR host_ip='')")
+    elif host:
+        where.append('host_ip=?')
+        args.append(host)
+
+
+@app.post('/api/bookmarks/<int:event_id>')
+def api_save_event(event_id):
+    c = db()
+    try:
+        event = rowdict(c.execute('SELECT * FROM events WHERE id=?', (event_id,)).fetchone())
+        if not event:
+            return jsonify(error='event not found'), 404
+        fields = ('host_ip', 'src_ip', 'dst_ip', 'user', 'program', 'event', 'mitre', 'message')
+        c.execute('INSERT OR IGNORE INTO soc_bookmarks(event_id,saved_at,event_json,' + ','.join(fields) +
+                  ') VALUES(' + ','.join('?' for _ in range(11)) + ')',
+                  (event_id, now_iso(), json.dumps(event, ensure_ascii=False)) + tuple(event.get(field) for field in fields))
+        c.commit()
+        return jsonify(ok=True, event_id=event_id, bookmarked=True)
+    finally:
+        c.close()
+
+
+@app.delete('/api/bookmarks/<int:event_id>')
+def api_unsave_event(event_id):
+    c = db()
+    try:
+        c.execute('DELETE FROM soc_bookmarks WHERE event_id=?', (event_id,))
+        c.commit()
+        return jsonify(ok=True, event_id=event_id, bookmarked=False)
+    finally:
+        c.close()
+
+
+@app.get('/api/bookmarks')
+def api_saved_events():
+    try:
+        page, size = page_args()
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+    field = request.args.get('field', 'message')
+    if field not in {'host_ip', 'src_ip', 'dst_ip', 'user', 'program', 'event', 'mitre', 'message'}:
+        return jsonify(error='invalid field'), 400
+    where, args = [], []
+    host_scope(where, args)
+    query = request.args.get('q', '').strip()
+    if query:
+        where.append(f"instr(soc_casefold(COALESCE({field},'')),soc_casefold(?))>0")
+        args.append(query)
+    clause = ' WHERE ' + ' AND '.join(where) if where else ''
+    c = db()
+    try:
+        total = c.execute('SELECT COUNT(*) FROM soc_bookmarks'+clause, args).fetchone()[0]
+        page = min(page, max(1, (total+size-1)//size))
+        stored = c.execute('SELECT * FROM soc_bookmarks'+clause+' ORDER BY saved_at DESC,event_id DESC LIMIT ? OFFSET ?',
+                           args+[size, (page-1)*size]).fetchall()
+        held = held_event_ids(c)
+        events = []
+        for saved in stored:
+            event = json.loads(saved['event_json'])
+            event.update(bookmarked=True, saved_at=saved['saved_at'], held=event['id'] in held,
+                         original_available=c.execute('SELECT 1 FROM events WHERE id=?', (event['id'],)).fetchone() is not None)
+            events.append(event)
+        events = annotate_event_risk(annotate_rules(events), c)
+        return jsonify(events=events, total=total, page=page, per_page=size, server_time=now_iso())
+    finally:
+        c.close()
+
+
+@app.get('/api/source-ips')
+def api_source_ips():
+    try:
+        page, size = page_args()
+        seconds = int(request.args.get('seconds', 300))
+        if seconds not in {0, 300, 900, 3600, 21600, 86400}:
+            raise ValueError('invalid time range')
+    except (ValueError, TypeError) as exc:
+        return jsonify(error=str(exc)), 400
+    where, args = [], []
+    host_scope(where, args)
+    if seconds:
+        now = datetime.now(timezone.utc).timestamp()
+        where.append('julianday(time) BETWEEN ? AND ?')
+        args.extend(((now-seconds)/86400+2440587.5, (now+60)/86400+2440587.5))
+    query = request.args.get('q', '').strip()
+    if query:
+        where.append("instr(COALESCE(src_ip,''),?)>0")
+        args.append(query)
+    base = ' WHERE ' + ' AND '.join(where) if where else ''
+    with_src = base + (' AND ' if where else ' WHERE ') + "src_ip IS NOT NULL AND src_ip<>''"
+    c = db()
+    try:
+        count = c.execute('SELECT COUNT(DISTINCT src_ip),COUNT(*) FROM events'+with_src, args).fetchone()
+        total = count[0]
+        page = min(page, max(1, (total+size-1)//size))
+        types = sorted(SUSPICIOUS)
+        sql = '''SELECT src_ip,COUNT(*) event_count,COUNT(DISTINCT COALESCE(NULLIF(host_ip,''),'__legacy__')) host_count,
+            MAX(julianday(time)) last_julian,
+            SUM(CASE WHEN event IN (''' + ','.join('?' for _ in types) + ''') THEN 1 ELSE 0 END) suspicious_count
+            FROM events''' + with_src + ' GROUP BY src_ip ORDER BY event_count DESC,src_ip LIMIT ? OFFSET ?'
+        sources = [dict(row) for row in c.execute(sql, types+args+[size,(page-1)*size])]
+        sample, grouped = [], {}
+        for source in sources:
+            rows = [dict(row) for row in c.execute('SELECT * FROM events'+with_src+' AND src_ip=? ORDER BY id DESC LIMIT 20',
+                                                  args+[source['src_ip']])]
+            grouped[source['src_ip']] = rows
+            sample.extend(rows)
+        annotate_event_risk(annotate_rules(sample), c)
+        for source in sources:
+            rows = grouped[source['src_ip']]
+            source['risk_score'] = max((row['risk_summary']['total_score'] for row in rows), default=None)
+            source['self_score'] = max((row['risk_summary']['self_score'] for row in rows), default=None)
+            source['sample_count'] = len(rows)
+            source['sample_limit'] = 20
+            source['critical_count'] = sum(row['risk_summary']['total_score'] >= 120 for row in rows)
+            source['attacks'] = sorted({hit['attack'] for row in rows for hit in row['detections']})[:5]
+            last = source.pop('last_julian')
+            source['last_seen'] = datetime.fromtimestamp((last-2440587.5)*86400,timezone.utc).isoformat() if last is not None else None
+        return jsonify(sources=sources, total=total, event_count=count[1], page=page, per_page=size,
+                       seconds=seconds, risk_basis='recent_20_events_max', server_time=now_iso())
     finally:
         c.close()
 

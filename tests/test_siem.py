@@ -249,6 +249,76 @@ class SiemIntegrationTests(unittest.TestCase):
         log.write_text('new log content is larger than the old offset\n',encoding='utf-8')
         self.assertEqual(self.module.load_offset(),0)
 
+    def test_bookmarks_are_idempotent_persistent_and_independent_of_hold(self):
+        self.add_event()
+        self.assertEqual(self.client.post('/api/bookmarks/1').status_code,200)
+        saved = self.client.get('/api/bookmarks').json['events'][0]
+        self.assertEqual(self.client.post('/api/bookmarks/1').status_code,200)
+        self.module.ensure_schema()
+        again = self.client.get('/api/bookmarks').json
+        self.assertEqual(again['total'],1)
+        self.assertEqual(again['events'][0]['saved_at'],saved['saved_at'])
+        self.assertTrue(self.client.get('/api/events').json['events'][0]['bookmarked'])
+        self.assertEqual(self.client.get('/api/anchors').json['anchors'],[])
+        self.assertEqual(self.client.post('/api/bookmarks/999').status_code,404)
+        self.client.delete('/api/bookmarks/1')
+        self.assertEqual(self.client.get('/api/bookmarks').json['total'],0)
+        self.assertEqual(len(self.client.get('/api/events').json['events']),1)
+
+    def test_saved_log_snapshot_survives_original_removal_and_has_pagination_search(self):
+        self.add_event(host='192.0.2.10')
+        self.add_event(host='192.0.2.11')
+        self.client.post('/api/bookmarks/1');self.client.post('/api/bookmarks/2')
+        result = self.client.get('/api/bookmarks?per_page=1&page=2').json
+        self.assertEqual((result['total'],result['events'][0]['id']),(2,1))
+        self.assertEqual(self.client.get('/api/bookmarks?host_ip=192.0.2.11').json['total'],1)
+        self.assertEqual(self.client.get('/api/bookmarks?field=message&q=FAILED').json['total'],2)
+        self.assertEqual(self.client.get('/api/bookmarks?field=message&q=%25').json['total'],0)
+        message = result['events'][0]['message']
+        c=sqlite3.connect(self.module.DB_PATH);c.execute('DELETE FROM events WHERE id=1');c.commit();c.close()
+        saved = self.client.get('/api/bookmarks?host_ip=192.0.2.10').json['events'][0]
+        self.assertEqual(saved['message'],message)
+        self.assertFalse(saved['original_available'])
+        self.assertEqual(self.client.get('/api/bookmarks?per_page=0').status_code,400)
+        self.assertEqual(self.client.get('/api/bookmarks?field=bad').status_code,400)
+
+    def test_source_ips_count_whole_scope_and_use_maximum_sampled_risk(self):
+        for _ in range(35):self.add_event()
+        self.add_event(host='192.0.2.11')
+        c=sqlite3.connect(self.module.DB_PATH)
+        c.execute("UPDATE events SET src_ip='198.51.100.21' WHERE id=36")
+        c.commit();c.close()
+        result=self.client.get('/api/source-ips?seconds=0').json
+        first=result['sources'][0]
+        self.assertEqual(result['event_count'],36)
+        self.assertEqual(first['src_ip'],'198.51.100.20')
+        self.assertEqual((first['event_count'],first['sample_count'],first['suspicious_count']),(35,20,35))
+        scores=[row['risk_summary']['total_score'] for row in self.client.get('/api/events?src_ip=198.51.100.20&include_risk=1&limit=20').json['events']]
+        self.assertEqual(first['risk_score'],max(scores))
+        self.assertNotEqual(first['risk_score'],sum(scores))
+        second=self.client.get('/api/source-ips?seconds=0&per_page=1&page=2').json
+        self.assertEqual((second['total'],second['sources'][0]['src_ip']),(2,'198.51.100.21'))
+        self.assertEqual(self.client.get('/api/source-ips?seconds=0&host_ip=192.0.2.11').json['event_count'],1)
+        self.assertEqual(self.client.get('/api/source-ips?seconds=0&q=100.21').json['total'],1)
+        self.assertEqual(self.client.get('/api/source-ips?seconds=123').status_code,400)
+
+    def test_source_time_window_and_current_rule_updates(self):
+        host=self.client.post('/api/hosts',json={'name':'agent','ip':'192.0.2.10'}).json['id']
+        now=datetime.now(timezone.utc)
+        self.add_event(now.isoformat())
+        self.add_event((now-timedelta(hours=2)).isoformat())
+        rule=self.client.post('/api/rules',json=self.rule(host,min_hits=1)).json['id']
+        result=self.client.get('/api/source-ips?seconds=300').json['sources'][0]
+        self.assertEqual(result['event_count'],1)
+        self.assertEqual(result['self_score'],140)
+        self.assertIn('SSH 무차별 대입',result['attacks'])
+        self.assertLess(abs(self.module.risk_timestamp(result['last_seen'])-now.timestamp()),.001)
+        self.client.patch('/api/rules/'+str(rule),json={'enabled':False})
+        result=self.client.get('/api/source-ips?seconds=300').json['sources'][0]
+        self.assertEqual(result['self_score'],20)
+        self.assertEqual(result['attacks'],[])
+        self.assertEqual(self.client.get('/api/source-ips?seconds=300&host_ip=__legacy__').json['sources'],[])
+
     def test_configurable_host_mapping(self):
         self.module.IP_MAP={}
         line='2026-10-10T17:40:00+09:00|test|172.16.16.141|user|notice|test|dst=172.16.16.141'
