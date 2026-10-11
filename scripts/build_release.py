@@ -11,6 +11,11 @@ FILES=['VERSION','install.sh','README.md','docs/INSTALL.md','docs/RULES.md','ins
        'scripts/verify_install.py','scripts/build_release.py',
        'backend/app.py','backend/detection_rules.py','backend/hosts_api.py','backend/soc_event_enricher.py','backend/verify_src.py',
        'backend/requirements.txt','backend/requirements.lock.txt']
+FILES += ['backend/'+name for name in ('central_store.py','central_schema.sql','central_worker.py','central_exporter.py','central_archive.py')]
+FILES += ['deploy/central/'+name for name in ('central-rsyslog-forward.sh','install_primary.py','install_was.py')]
+FILES += ['deploy/systemd/'+name for name in ('soc-central-worker.service','soc-central-exporter.service','soc-central-archive.service')]
+FILES += ['docs/CENTRAL_STORAGE.md']
+FILES += ['scripts/verify_central.py']
 FILES += ['dashboard/frontend/'+name for name in ['index.html','hosts.html','rsyslog.html','rules.html','rules.js','theme.css','risk-details.js','site-config.js']]
 
 

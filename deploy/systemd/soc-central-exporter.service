@@ -1,0 +1,20 @@
+[Unit]
+Description=MALSONSA DB-host macro/micro JSON index exporter
+After=mariadb.service network-online.target
+Wants=network-online.target
+[Service]
+User=root
+WorkingDirectory=/opt/malsonsa/backend
+Environment=SOC_CENTRAL_CONFIG=/etc/malsonsa/exporter.json
+Environment=SOC_ARCHIVE_ROOT=/var/lib/malsonsa/index
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/malsonsa/venv/bin/python /opt/malsonsa/backend/central_exporter.py
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/malsonsa/index
+PrivateTmp=true
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,20 @@
+[Unit]
+Description=MALSONSA central raw ingestion and in-memory correlation
+After=network-online.target soc-siem.service
+Wants=network-online.target
+[Service]
+User=socsiem
+Group=socsiem
+WorkingDirectory=/opt/soc/backend
+EnvironmentFile=/etc/soc-siem.env
+Environment=SOC_DISABLE_INGESTOR=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/soc/venv/bin/python /opt/soc/backend/central_worker.py
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+[Install]
+WantedBy=multi-user.target

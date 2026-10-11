@@ -20,13 +20,19 @@ DB 수집 보정, 화이트 테마 및 에이전트별 관제 룰 기능을 추�
 
 ## 구성
 
-- `backend/`: `/opt/soc/backend`의 운영 Flask + SQLite SIEM. rsyslog 수집, 이벤트 정규화, MITRE 태그, 앵커 Hold, 점수 기반 Similar 검색, 호스트 관리.
+- `backend/`: Flask SIEM. 기본 단일 서버 SQLite 모드와 중앙 MariaDB 모드를 지원하며 rsyslog 정규화, MITRE 태그, HOLD/Similar, 호스트와 룰을 관리합니다.
 - `dashboard/frontend/`: Nginx 정적 대시보드, `rsyslog.html`, `hosts.html` 및 React 소스.
 - `dashboard/backend/`: 서버에 함께 존재하는 FastAPI 시작 코드. 운영 Flask API와 별개이며 Docker Compose는 이 FastAPI 구성용입니다.
 - `deploy/`: systemd, rsyslog, Nginx 설정 스냅샷. 인증서 파일은 제외합니다.
 - `tests/`: 합성 로그와 임시 DB를 사용하는 통합 테스트.
 
 DB, 실제 로그, 수집 offset, 비밀번호, 개인키, 가상환경과 백업은 Git에 포함하지 않습니다.
+
+## 중앙 DB와 앵커 색인 (develop)
+
+관제 agent가 primary DB로 syslog를 보내면 MariaDB가 원본을 저장합니다. WAS는 원본을 읽어 메모리에서 분석하고 결과를 DB 서버에 반환합니다. DB 서버는 IP 최상위·앵커별 하위 디렉터리와 Similar 튜플 TXT/위치 TXT를 함께 만들어 HOLD에서 다시 참조합니다. 대상 호스트 로그·분석 파일은 WAS에 저장하지 않습니다.
+
+[중앙 저장·이관·색인 운영 안내](docs/CENTRAL_STORAGE.md)를 참고하세요. 기존 v1.0 릴리스와 main은 별도로 유지합니다.
 
 ## 작업 흐름
 
