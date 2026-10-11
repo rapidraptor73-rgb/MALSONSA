@@ -25,3 +25,11 @@ for(const key of ['all','critical','high','medium','low']) assert.ok(html.includ
 const detection=risk.detectionHtml({detection_score:120,detections:[{name:'test',attack:'<script>bad</script>',points:120,reason:'same source repeated failures',evidence:[{field:'message',operator:'contains',expected:'failed',actual:'<img src=x>'}],hits:5,min_hits:5,window_seconds:300,group_by:'src_ip'}]});
 assert.ok(detection.includes('CRITICAL'));assert.ok(detection.includes('5회 관찰'));assert.ok(!detection.includes('<script>'));assert.ok(!detection.includes('<img'));assert.ok(detection.includes('&lt;script&gt;'));
 assert.ok(risk.detectionHtml({}).includes('일치 룰 없음'));
+assert.ok(risk.eventRiskHtml({}).includes('미산정'));
+const collectionRisk={total_score:155,self_score:20,type_score:20,rule_score:0,related_score:135,related_count:1,matched_count:1,time_valid:true,minutes:60,min_score:60,candidate_count:2,candidate_limit:5000,related_limit:500,examples:[{id:1,event:'<img src=x>',score:135}]};
+const collection=risk.eventRiskHtml({risk_summary:collectionRisk});
+assert.ok(collection.includes('CRITICAL'));assert.ok(collection.includes('로그 자체 20점 · LOW'));
+assert.ok(collection.includes('연관 1건'));assert.ok(collection.includes('자체 20점 + 연관 상관점수 합계 135점'));
+assert.ok(!collection.includes('<img'));assert.ok(collection.includes('&lt;img'));
+assert.ok(risk.eventRiskHtml({risk_summary:{...collectionRisk,time_valid:false}}).includes('시간 형식 오류'));
+assert.ok(html.includes('<th>앵커</th><th>위험도</th><th>발생 시각</th>'));

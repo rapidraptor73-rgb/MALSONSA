@@ -6,6 +6,8 @@ import time
 import sqlite3
 import threading
 import ipaddress
+import bisect
+import heapq
 from datetime import datetime, timezone
 
 from flask import Flask, jsonify, request
@@ -424,7 +426,7 @@ def sequence_bonus(a, b):
     ]
     return 30 if (a, b) in chain or (b, a) in chain else 0
 
-def similar_score(anchor, candidate):
+def similar_score(anchor, candidate, time_diff=None):
     score = 0
     reasons = []
 
@@ -438,9 +440,11 @@ def similar_score(anchor, candidate):
         score += 20
         reasons.append("same_user:+20")
 
-    at = parse_time(anchor.get("time"))
-    ct = parse_time(candidate.get("time"))
-    diff = abs((ct - at).total_seconds())
+    if time_diff is None:
+        at = parse_time(anchor.get("time"))
+        ct = parse_time(candidate.get("time"))
+        time_diff = abs((ct - at).total_seconds())
+    diff = time_diff
 
     if diff <= 300:
         score += 30
@@ -466,6 +470,114 @@ def similar_score(anchor, candidate):
         reasons.append("suspicious:+20")
 
     return score, reasons
+
+
+_risk_cache = {}
+_risk_lock = threading.Lock()
+RISK_FIELDS = ('id', 'time', 'host_ip', 'src_ip', 'dst_ip', 'user', 'event', 'mitre')
+
+
+def annotate_event_risk(events, c):
+    """Batch review priority without a Hold write or a request per event.
+
+    Fixed +/-60m window, >=60 similarity, same host plus SRC/account link.
+    At least one side must be suspicious. Summaries are bounded to the latest
+    5000 candidates and the strongest 500 matches, independently of UI filters.
+    Current rule points are added only for the event itself.
+    """
+    pool = [dict(row) for row in c.execute(
+        'SELECT ' + ','.join(RISK_FIELDS) + ' FROM events ORDER BY id DESC LIMIT 5000')]
+    signature = tuple(tuple(row.get(field) for field in RISK_FIELDS) for row in pool)
+    requested = tuple(tuple(row.get(field) for field in RISK_FIELDS) for row in events)
+    key = (signature, requested)
+    with _risk_lock:
+        cached = _risk_cache.get('value') if _risk_cache.get('key') == key else None
+    if cached is None:
+        indexed = {}
+        groups = {}
+        by_id = {row['id']: row for row in pool}
+        for row in pool:
+            stamp = risk_timestamp(row.get('time'))
+            if stamp is None:
+                continue
+            group = tuple(row.get(field) or '' for field in RISK_FIELDS[2:])
+            groups.setdefault(group, []).append((stamp, row['id']))
+            for field in ('src_ip', 'user'):
+                value = row.get(field)
+                if value:
+                    indexed.setdefault((row.get('host_ip') or '', field, value), set()).add(group)
+        for values in groups.values():
+            values.sort()
+        cached = {}
+        for event in events:
+            stamp = risk_timestamp(event.get('time'))
+            buckets = []
+            examples = []
+            if stamp is not None:
+                linked_groups = set()
+                for field in ('src_ip', 'user'):
+                    linked_groups.update(indexed.get((event.get('host_ip') or '', field, event.get(field)), ()))
+                for group in linked_groups:
+                    values = groups[group]
+                    other = by_id[values[0][1]]
+                    if event.get('event') not in SUSPICIOUS and other.get('event') not in SUSPICIOUS:
+                        continue
+                    # Equal fields have equal scores within each time tier. Count
+                    # them with bisection rather than scoring every repeated log.
+                    previous = None
+                    for radius, representative_diff in ((300, 0), (900, 301), (1800, 901), (3600, 1801)):
+                        start = bisect.bisect_left(values, (stamp - radius, -1))
+                        stop = bisect.bisect_right(values, (stamp + radius, float('inf')))
+                        ranges = [(start, stop)] if previous is None else [(start, previous[0]), (previous[1], stop)]
+                        previous = (start, stop)
+                        count = sum(end - begin for begin, end in ranges)
+                        if radius == 300 and event['id'] in by_id and tuple(event.get(field) or '' for field in RISK_FIELDS[2:]) == group:
+                            count -= 1
+                        if count <= 0:
+                            continue
+                        score, reasons = similar_score(event, other, representative_diff)
+                        if score >= 60:
+                            buckets.append((score, count))
+                            latest = heapq.nlargest(3, (event_id for begin, end in ranges
+                                for _, event_id in values[begin:end] if event_id != event['id']))
+                            examples.extend({'id': event_id, 'score': score, 'reasons': reasons,
+                                             'event': other.get('event'), 'time': by_id[event_id].get('time')}
+                                            for event_id in latest)
+            remaining = 500
+            total = 0
+            for score, count in sorted(buckets, reverse=True):
+                used = min(count, remaining)
+                total += score * used
+                remaining -= used
+                if not remaining:
+                    break
+            cached[event['id']] = {'related_score': total, 'related_count': 500 - remaining,
+                                  'matched_count': sum(count for _, count in buckets),
+                                  'examples': sorted(examples, key=lambda item: (-item['score'], -item['id']))[:3],
+                                  'time_valid': stamp is not None}
+        with _risk_lock:
+            _risk_cache.clear()
+            _risk_cache.update(key=key, value=cached)
+    for event in events:
+        classification = 20 if event.get('event') in SUSPICIOUS else 0
+        rule_points = event.get('detection_score', 0)
+        summary = dict(cached[event['id']])
+        summary.update(type_score=classification, rule_score=rule_points,
+                       self_score=classification + rule_points,
+                       total_score=classification + rule_points + summary['related_score'],
+                       minutes=60, min_score=60, candidate_limit=5000, related_limit=500,
+                       candidate_count=len(pool), scope='same_host_src_or_user', basis='review_priority')
+        event['risk_summary'] = summary
+    return events
+
+
+def risk_timestamp(value):
+    # parse_time() historically substitutes "now" for malformed values; automatic
+    # risk must not invent temporal relationships for a missing/broken timestamp.
+    try:
+        return datetime.fromisoformat(str(value).strip().replace('Z', '+00:00')).timestamp()
+    except (TypeError, ValueError, OverflowError, OSError):
+        return None
 
 @app.get("/api/health")
 def api_health():
@@ -524,7 +636,10 @@ def api_events():
         held = held_event_ids(c)
         for r in rows:
             r["held"] = r["id"] in held
-        return jsonify({"events": annotate_rules(rows), "server_time": now_iso()})
+        rows = annotate_rules(rows)
+        if request.args.get('include_risk') == '1':
+            rows = annotate_event_risk(rows, c)
+        return jsonify({"events": rows, "server_time": now_iso()})
     finally:
         c.close()
 

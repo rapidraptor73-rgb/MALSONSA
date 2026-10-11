@@ -52,6 +52,12 @@
     if(!detections.length) return '<span class="muted">일치 룰 없음 · 공격 안전 여부를 뜻하지 않습니다.</span>';
     return `<div class="detection-result">${scoreBadge(event.detection_score)}<span class="subtext">현재 룰 기준 · 추정 공격</span><details class="reason-details"><summary>${detections.map(item=>escape(item.attack)).join(' · ')} · 근거 ${detections.length}개</summary><ol class="reason-list">${detections.map(item=>`<li><div class="reason-heading"><span>${escape(item.name)} · ${escape(item.attack)} 의심</span><span class="reason-points">+${escape(item.points)}점</span></div><p>${escape(item.reason)}</p>${item.evidence.map(e=>`<p>${escape(e.field)} ${e.operator==='contains'?'포함':'일치'}: <code>${escape(e.expected)}</code><br>관찰값: ${escape(e.actual)}</p>`).join('')}${item.min_hits>1?`<p>${escape(item.window_seconds)}초 내 ${escape(item.hits)}회 관찰 / 기준 ${escape(item.min_hits)}회 · ${escape(item.group_by)}</p>`:''}</li>`).join('')}</ol></details></div>`;
   }
-  const api={priority,scoreBadge,reasons,reasonHtml,detectionHtml};
+  function eventRiskHtml(event={}){
+    const risk=event.risk_summary;
+    if(!risk) return '<span class="risk-badge risk-unknown">미산정</span><span class="subtext">위험도 조회 필요</span>';
+    const examples=(risk.examples||[]).map(item=>`<li>LOG ${escape(item.id)} · ${escape(names[item.event]||item.event)} · +${escape(item.score)}점</li>`).join('');
+    return `<div class="event-risk">${scoreBadge(risk.total_score)}<span class="subtext">종합 검토 점수</span><span class="risk-self">로그 자체 ${escape(risk.self_score)}점 · ${priority(risk.self_score).label}</span><span class="subtext">연관 ${escape(risk.related_count)}건 · +${escape(risk.related_score)}점</span><details class="reason-details"><summary>합계 산정 보기</summary><div class="risk-breakdown"><p>자체 ${escape(risk.self_score)}점 = 의심 유형 ${escape(risk.type_score)}점 + 일치 룰 ${escape(risk.rule_score)}점</p><p>종합 ${escape(risk.total_score)}점 = 자체 ${escape(risk.self_score)}점 + 연관 상관점수 합계 ${escape(risk.related_score)}점</p><p>같은 호스트 · SRC 또는 사용자 일치 · 전후 ${escape(risk.minutes)}분 · 상관점수 ${escape(risk.min_score)}점 이상. 두 로그 중 하나는 의심 이벤트 유형이어야 합니다.</p>${!risk.time_valid?'<p>시간 형식 오류: 연관 점수를 계산하지 않았습니다.</p>':''}<p>최근 ${escape(risk.candidate_count)}건(최대 ${escape(risk.candidate_limit)}건)에서 높은 점수순 최대 ${escape(risk.related_limit)}건을 합산합니다.${risk.matched_count>risk.related_count?' 합산 상한에 도달했습니다.':''} 반복 로그가 많으면 합계가 커집니다. 공격 확률이나 침해 확정을 뜻하지 않습니다.</p>${examples?`<b>높은 점수의 연관 로그 예시</b><ul>${examples}</ul>`:''}</div></details></div>`;
+  }
+  const api={priority,scoreBadge,reasons,reasonHtml,detectionHtml,eventRiskHtml};
   if(typeof module==='object' && module.exports) module.exports=api; else root.SiemRisk=api;
 })(typeof window!=='undefined'?window:globalThis);
